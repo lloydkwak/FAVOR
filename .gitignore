@@ -1,0 +1,5 @@
+data/
+results/
+diffusion_policy/
+__pycache__/
+*.pyc

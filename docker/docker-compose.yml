@@ -1,0 +1,33 @@
+# FAVOR Phase 0+ — single service, full host<->container sync.
+#
+# The entire project root (..) is bind-mounted at /workspace. This means:
+#   - diffusion_policy/ (host clone) is what actually gets imported —
+#     the image contains NO copy of it.
+#   - data/ and results/ are host directories — checkpoints and outputs
+#     never live only inside the container.
+#   - Any host-side edit (code, configs, new files) is visible immediately
+#     on next `docker compose run favor`, no rebuild needed.
+#   - A rebuild IS needed only when docker/Dockerfile or
+#     docker/conda_environment.robodiff.yaml changes (system/env layer).
+#
+# Build : docker compose -f docker/docker-compose.yml build
+# Verify: docker compose -f docker/docker-compose.yml run --rm favor verify
+# Shell : docker compose -f docker/docker-compose.yml run --rm favor
+services:
+  favor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: favor-p0
+    volumes:
+      - ..:/workspace
+    shm_size: "8gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true
