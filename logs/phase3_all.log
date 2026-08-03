@@ -1,0 +1,341 @@
+=================== START lift ===================
+Mon Aug  3 10:33:03 UTC 2026
+/opt/conda/envs/robodiff/lib/python3.9/site-packages/wandb/apis/public.py:2997: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import parse_version
+Compiling /opt/conda/envs/robodiff/lib/python3.9/site-packages/mujoco_py/cymj.pyx because it changed.
+[1/1] Cythonizing /opt/conda/envs/robodiff/lib/python3.9/site-packages/mujoco_py/cymj.pyx
+
+============= Initialized Observation Utils with Obs Spec =============
+
+using obs modality: low_dim with keys: ['robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos']
+using obs modality: rgb with keys: ['agentview_image', 'robot0_eye_in_hand_image']
+using obs modality: depth with keys: []
+using obs modality: scan with keys: []
+/opt/conda/envs/robodiff/lib/python3.9/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and will be removed in 0.15, please use 'weights' instead.
+  warnings.warn(
+/opt/conda/envs/robodiff/lib/python3.9/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and will be removed in 0.15. The current behavior is equivalent to passing `weights=None`.
+  warnings.warn(msg)
+Diffusion params: 2.556120e+08
+Vision params: 2.239418e+07
+Created environment with name Lift
+Action size is 7
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Device 0 is available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+INFO:root:Command '['/opt/conda/envs/robodiff/lib/python3.9/site-packages/egl_probe/build/test_device', '1']' returned non-zero exit status 1.
+INFO:root:Device 1 is not available for rendering
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Created environment with name Lift
+Action size is 7
+Eval LiftImage 1/2:   0% 0/400 [00:00<?, ?it/s]Eval LiftImage 1/2:   2% 8/400 [00:09<07:52,  1.20s/it]Eval LiftImage 1/2:   6% 24/400 [00:15<03:38,  1.72it/s]Eval LiftImage 1/2:  10% 40/400 [00:21<02:50,  2.12it/s]Eval LiftImage 1/2:  14% 56/400 [00:27<02:26,  2.34it/s]Eval LiftImage 1/2:  18% 72/400 [00:33<02:12,  2.47it/s]Eval LiftImage 1/2:  22% 88/400 [00:39<02:02,  2.54it/s]Eval LiftImage 1/2:  26% 104/400 [00:44<01:53,  2.61it/s]Eval LiftImage 1/2:  30% 120/400 [00:50<01:45,  2.65it/s]Eval LiftImage 1/2:  34% 136/400 [00:56<01:38,  2.67it/s]Eval LiftImage 1/2:  38% 152/400 [01:02<01:32,  2.69it/s]Eval LiftImage 1/2:  42% 168/400 [01:08<01:25,  2.70it/s]Eval LiftImage 1/2:  46% 184/400 [01:14<01:19,  2.70it/s]Eval LiftImage 1/2:  50% 200/400 [01:20<01:13,  2.71it/s]Eval LiftImage 1/2:  54% 216/400 [01:26<01:07,  2.71it/s]Eval LiftImage 1/2:  58% 232/400 [01:31<01:01,  2.72it/s]Eval LiftImage 1/2:  62% 248/400 [01:37<00:55,  2.72it/s]Eval LiftImage 1/2:  66% 264/400 [01:43<00:49,  2.73it/s]Eval LiftImage 1/2:  70% 280/400 [01:49<00:43,  2.73it/s]Eval LiftImage 1/2:  74% 296/400 [01:55<00:38,  2.73it/s]Eval LiftImage 1/2:  78% 312/400 [02:01<00:32,  2.70it/s]Eval LiftImage 1/2:  82% 328/400 [02:07<00:26,  2.71it/s]Eval LiftImage 1/2:  86% 344/400 [02:13<00:20,  2.71it/s]Eval LiftImage 1/2:  90% 360/400 [02:18<00:14,  2.72it/s]Eval LiftImage 1/2:  94% 376/400 [02:24<00:08,  2.70it/s]Eval LiftImage 1/2:  98% 392/400 [02:30<00:02,  2.70it/s]                                                         Eval LiftImage 2/2:   0% 0/400 [00:00<?, ?it/s]Eval LiftImage 2/2:   4% 16/400 [00:05<02:22,  2.69it/s]Eval LiftImage 2/2:   8% 32/400 [00:11<02:15,  2.71it/s]Eval LiftImage 2/2:  12% 48/400 [00:17<02:11,  2.67it/s]Eval LiftImage 2/2:  16% 64/400 [00:23<02:05,  2.69it/s]Eval LiftImage 2/2:  20% 80/400 [00:29<01:58,  2.70it/s]Eval LiftImage 2/2:  24% 96/400 [00:35<01:53,  2.69it/s]Eval LiftImage 2/2:  28% 112/400 [00:41<01:46,  2.70it/s]Eval LiftImage 2/2:  32% 128/400 [00:47<01:40,  2.70it/s]Eval LiftImage 2/2:  36% 144/400 [00:53<01:34,  2.72it/s]Eval LiftImage 2/2:  40% 160/400 [00:59<01:28,  2.72it/s]Eval LiftImage 2/2:  44% 176/400 [01:05<01:22,  2.71it/s]Eval LiftImage 2/2:  48% 192/400 [01:11<01:16,  2.70it/s]Eval LiftImage 2/2:  52% 208/400 [01:16<01:10,  2.71it/s]Eval LiftImage 2/2:  56% 224/400 [01:22<01:05,  2.71it/s]Eval LiftImage 2/2:  60% 240/400 [01:28<00:58,  2.71it/s]Eval LiftImage 2/2:  64% 256/400 [01:34<00:53,  2.71it/s]Eval LiftImage 2/2:  68% 272/400 [01:40<00:47,  2.70it/s]Eval LiftImage 2/2:  72% 288/400 [01:46<00:41,  2.70it/s]Eval LiftImage 2/2:  76% 304/400 [01:52<00:35,  2.69it/s]Eval LiftImage 2/2:  80% 320/400 [01:58<00:29,  2.68it/s]Eval LiftImage 2/2:  84% 336/400 [02:04<00:23,  2.68it/s]Eval LiftImage 2/2:  88% 352/400 [02:10<00:17,  2.68it/s]Eval LiftImage 2/2:  92% 368/400 [02:16<00:11,  2.68it/s]Eval LiftImage 2/2:  96% 384/400 [02:22<00:05,  2.68it/s]Eval LiftImage 2/2: 100% 400/400 [02:28<00:00,  2.68it/s]                                                         Traceback (most recent call last):
+  File "/workspace/docker/run_fault_sweep.py", line 84, in <module>
+    main()
+  File "/workspace/docker/run_fault_sweep.py", line 65, in main
+    score = run_one(policy, cfg, dataset, f"{base_dir}/baseline", "robot0_joint1", None, None)
+  File "/workspace/docker/run_fault_sweep.py", line 45, in run_one
+    with open(os.path.join(output_dir, "eval_log.json"), "w") as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/results/phase3/lift/baseline/eval_log.json'
+[0m=================== DONE lift ===================
+Mon Aug  3 10:38:45 UTC 2026
+=================== START can ===================
+Mon Aug  3 10:38:45 UTC 2026
+/opt/conda/envs/robodiff/lib/python3.9/site-packages/wandb/apis/public.py:2997: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import parse_version
+
+============= Initialized Observation Utils with Obs Spec =============
+
+using obs modality: low_dim with keys: ['robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos']
+using obs modality: rgb with keys: ['agentview_image', 'robot0_eye_in_hand_image']
+using obs modality: depth with keys: []
+using obs modality: scan with keys: []
+/opt/conda/envs/robodiff/lib/python3.9/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and will be removed in 0.15, please use 'weights' instead.
+  warnings.warn(
+/opt/conda/envs/robodiff/lib/python3.9/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and will be removed in 0.15. The current behavior is equivalent to passing `weights=None`.
+  warnings.warn(msg)
+Diffusion params: 2.556120e+08
+Vision params: 2.239418e+07
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Created environment with name PickPlaceCan
+Action size is 7
+Eval PickPlaceCanImage 1/2:   0% 0/400 [00:00<?, ?it/s]Eval PickPlaceCanImage 1/2:   4% 16/400 [00:07<03:07,  2.05it/s]Eval PickPlaceCanImage 1/2:   8% 32/400 [00:14<02:44,  2.24it/s]Eval PickPlaceCanImage 1/2:  12% 48/400 [00:21<02:32,  2.30it/s]Eval PickPlaceCanImage 1/2:  16% 64/400 [00:27<02:23,  2.34it/s]Eval PickPlaceCanImage 1/2:  20% 80/400 [00:34<02:16,  2.35it/s]Eval PickPlaceCanImage 1/2:  24% 96/400 [00:41<02:07,  2.38it/s]Eval PickPlaceCanImage 1/2:  28% 112/400 [00:47<01:59,  2.42it/s]Eval PickPlaceCanImage 1/2:  32% 128/400 [00:54<01:51,  2.44it/s]Eval PickPlaceCanImage 1/2:  36% 144/400 [01:00<01:44,  2.45it/s]Eval PickPlaceCanImage 1/2:  40% 160/400 [01:06<01:36,  2.48it/s]Eval PickPlaceCanImage 1/2:  44% 176/400 [01:13<01:30,  2.49it/s]Eval PickPlaceCanImage 1/2:  48% 192/400 [01:19<01:23,  2.49it/s]Eval PickPlaceCanImage 1/2:  52% 208/400 [01:26<01:17,  2.48it/s]Eval PickPlaceCanImage 1/2:  56% 224/400 [01:32<01:10,  2.48it/s]Eval PickPlaceCanImage 1/2:  60% 240/400 [01:38<01:04,  2.49it/s]Eval PickPlaceCanImage 1/2:  64% 256/400 [01:45<00:57,  2.49it/s]Eval PickPlaceCanImage 1/2:  68% 272/400 [01:51<00:51,  2.49it/s]Eval PickPlaceCanImage 1/2:  72% 288/400 [01:58<00:44,  2.49it/s]Eval PickPlaceCanImage 1/2:  76% 304/400 [02:04<00:38,  2.50it/s]Eval PickPlaceCanImage 1/2:  80% 320/400 [02:10<00:32,  2.49it/s]Eval PickPlaceCanImage 1/2:  84% 336/400 [02:17<00:25,  2.49it/s]Eval PickPlaceCanImage 1/2:  88% 352/400 [02:23<00:19,  2.50it/s]Eval PickPlaceCanImage 1/2:  92% 368/400 [02:30<00:12,  2.50it/s]Eval PickPlaceCanImage 1/2:  96% 384/400 [02:36<00:06,  2.51it/s]Eval PickPlaceCanImage 1/2: 100% 400/400 [02:42<00:00,  2.51it/s]                                                                 Eval PickPlaceCanImage 2/2:   0% 0/400 [00:00<?, ?it/s]Eval PickPlaceCanImage 2/2:   4% 16/400 [00:06<02:37,  2.44it/s]Eval PickPlaceCanImage 2/2:   8% 32/400 [00:13<02:32,  2.42it/s]Eval PickPlaceCanImage 2/2:  12% 48/400 [00:19<02:25,  2.41it/s]Eval PickPlaceCanImage 2/2:  16% 64/400 [00:26<02:19,  2.41it/s]Eval PickPlaceCanImage 2/2:  20% 80/400 [00:33<02:12,  2.42it/s]Eval PickPlaceCanImage 2/2:  24% 96/400 [00:39<02:06,  2.40it/s]Eval PickPlaceCanImage 2/2:  28% 112/400 [00:46<01:58,  2.42it/s]Eval PickPlaceCanImage 2/2:  32% 128/400 [00:52<01:51,  2.44it/s]Eval PickPlaceCanImage 2/2:  36% 144/400 [00:59<01:44,  2.46it/s]Eval PickPlaceCanImage 2/2:  40% 160/400 [01:05<01:36,  2.48it/s]Eval PickPlaceCanImage 2/2:  44% 176/400 [01:11<01:29,  2.50it/s]Eval PickPlaceCanImage 2/2:  48% 192/400 [01:18<01:22,  2.51it/s]Eval PickPlaceCanImage 2/2:  52% 208/400 [01:24<01:16,  2.51it/s]Eval PickPlaceCanImage 2/2:  56% 224/400 [01:30<01:10,  2.51it/s]Eval PickPlaceCanImage 2/2:  60% 240/400 [01:37<01:03,  2.52it/s]Eval PickPlaceCanImage 2/2:  64% 256/400 [01:43<00:56,  2.53it/s]Eval PickPlaceCanImage 2/2:  68% 272/400 [01:49<00:50,  2.52it/s]Eval PickPlaceCanImage 2/2:  72% 288/400 [01:56<00:44,  2.53it/s]Eval PickPlaceCanImage 2/2:  76% 304/400 [02:02<00:38,  2.52it/s]Eval PickPlaceCanImage 2/2:  80% 320/400 [02:08<00:31,  2.52it/s]Eval PickPlaceCanImage 2/2:  84% 336/400 [02:15<00:25,  2.51it/s]Eval PickPlaceCanImage 2/2:  88% 352/400 [02:21<00:19,  2.52it/s]Eval PickPlaceCanImage 2/2:  92% 368/400 [02:27<00:12,  2.54it/s]Eval PickPlaceCanImage 2/2:  96% 384/400 [02:34<00:06,  2.53it/s]Eval PickPlaceCanImage 2/2: 100% 400/400 [02:40<00:00,  2.53it/s]                                                                 Traceback (most recent call last):
+  File "/workspace/docker/run_fault_sweep.py", line 84, in <module>
+    main()
+  File "/workspace/docker/run_fault_sweep.py", line 65, in main
+    score = run_one(policy, cfg, dataset, f"{base_dir}/baseline", "robot0_joint1", None, None)
+  File "/workspace/docker/run_fault_sweep.py", line 45, in run_one
+    with open(os.path.join(output_dir, "eval_log.json"), "w") as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/results/phase3/can/baseline/eval_log.json'
+[0m=================== DONE can ===================
+Mon Aug  3 10:44:43 UTC 2026
+=================== START square ===================
+Mon Aug  3 10:44:43 UTC 2026
+/opt/conda/envs/robodiff/lib/python3.9/site-packages/wandb/apis/public.py:2997: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import parse_version
+
+============= Initialized Observation Utils with Obs Spec =============
+
+using obs modality: low_dim with keys: ['robot0_gripper_qpos', 'robot0_eef_pos', 'robot0_eef_quat']
+using obs modality: rgb with keys: ['agentview_image', 'robot0_eye_in_hand_image']
+using obs modality: depth with keys: []
+using obs modality: scan with keys: []
+/opt/conda/envs/robodiff/lib/python3.9/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and will be removed in 0.15, please use 'weights' instead.
+  warnings.warn(
+/opt/conda/envs/robodiff/lib/python3.9/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and will be removed in 0.15. The current behavior is equivalent to passing `weights=None`.
+  warnings.warn(msg)
+Diffusion params: 2.556120e+08
+Vision params: 2.239418e+07
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Created environment with name NutAssemblySquare
+Action size is 7
+Eval NutAssemblySquareImage 1/2:   0% 0/400 [00:00<?, ?it/s]Eval NutAssemblySquareImage 1/2:   4% 16/400 [00:07<02:58,  2.15it/s]Eval NutAssemblySquareImage 1/2:   8% 32/400 [00:13<02:33,  2.40it/s]Eval NutAssemblySquareImage 1/2:  12% 48/400 [00:19<02:20,  2.50it/s]Eval NutAssemblySquareImage 1/2:  16% 64/400 [00:25<02:12,  2.54it/s]Eval NutAssemblySquareImage 1/2:  20% 80/400 [00:31<02:05,  2.56it/s]Eval NutAssemblySquareImage 1/2:  24% 96/400 [00:38<01:57,  2.58it/s]Eval NutAssemblySquareImage 1/2:  28% 112/400 [00:44<01:50,  2.61it/s]Eval NutAssemblySquareImage 1/2:  32% 128/400 [00:50<01:43,  2.62it/s]Eval NutAssemblySquareImage 1/2:  36% 144/400 [00:56<01:37,  2.62it/s]Eval NutAssemblySquareImage 1/2:  40% 160/400 [01:02<01:31,  2.62it/s]Eval NutAssemblySquareImage 1/2:  44% 176/400 [01:08<01:25,  2.63it/s]Eval NutAssemblySquareImage 1/2:  48% 192/400 [01:14<01:19,  2.62it/s]Eval NutAssemblySquareImage 1/2:  52% 208/400 [01:20<01:13,  2.62it/s]Eval NutAssemblySquareImage 1/2:  56% 224/400 [01:26<01:07,  2.61it/s]Eval NutAssemblySquareImage 1/2:  60% 240/400 [01:32<01:01,  2.61it/s]Eval NutAssemblySquareImage 1/2:  64% 256/400 [01:39<00:55,  2.60it/s]Eval NutAssemblySquareImage 1/2:  68% 272/400 [01:45<00:49,  2.61it/s]Eval NutAssemblySquareImage 1/2:  72% 288/400 [01:51<00:42,  2.61it/s]Eval NutAssemblySquareImage 1/2:  76% 304/400 [01:57<00:36,  2.61it/s]Eval NutAssemblySquareImage 1/2:  80% 320/400 [02:03<00:30,  2.62it/s]Eval NutAssemblySquareImage 1/2:  84% 336/400 [02:09<00:24,  2.61it/s]Eval NutAssemblySquareImage 1/2:  88% 352/400 [02:15<00:18,  2.62it/s]Eval NutAssemblySquareImage 1/2:  92% 368/400 [02:21<00:12,  2.61it/s]Eval NutAssemblySquareImage 1/2:  96% 384/400 [02:28<00:06,  2.59it/s]Eval NutAssemblySquareImage 1/2: 100% 400/400 [02:34<00:00,  2.60it/s]                                                                      Eval NutAssemblySquareImage 2/2:   0% 0/400 [00:00<?, ?it/s]Eval NutAssemblySquareImage 2/2:   4% 16/400 [00:06<02:26,  2.63it/s]Eval NutAssemblySquareImage 2/2:   8% 32/400 [00:12<02:21,  2.60it/s]Eval NutAssemblySquareImage 2/2:  12% 48/400 [00:18<02:14,  2.61it/s]Eval NutAssemblySquareImage 2/2:  16% 64/400 [00:24<02:09,  2.59it/s]Eval NutAssemblySquareImage 2/2:  20% 80/400 [00:30<02:03,  2.59it/s]Eval NutAssemblySquareImage 2/2:  24% 96/400 [00:36<01:56,  2.60it/s]Eval NutAssemblySquareImage 2/2:  28% 112/400 [00:43<01:50,  2.61it/s]Eval NutAssemblySquareImage 2/2:  32% 128/400 [00:49<01:44,  2.61it/s]Eval NutAssemblySquareImage 2/2:  36% 144/400 [00:55<01:37,  2.61it/s]Eval NutAssemblySquareImage 2/2:  40% 160/400 [01:01<01:32,  2.60it/s]Eval NutAssemblySquareImage 2/2:  44% 176/400 [01:07<01:26,  2.60it/s]Eval NutAssemblySquareImage 2/2:  48% 192/400 [01:13<01:19,  2.60it/s]Eval NutAssemblySquareImage 2/2:  52% 208/400 [01:19<01:13,  2.60it/s]Eval NutAssemblySquareImage 2/2:  56% 224/400 [01:26<01:07,  2.59it/s]Eval NutAssemblySquareImage 2/2:  60% 240/400 [01:32<01:01,  2.59it/s]Eval NutAssemblySquareImage 2/2:  64% 256/400 [01:38<00:55,  2.58it/s]Eval NutAssemblySquareImage 2/2:  68% 272/400 [01:44<00:49,  2.57it/s]Eval NutAssemblySquareImage 2/2:  72% 288/400 [01:51<00:43,  2.57it/s]Eval NutAssemblySquareImage 2/2:  76% 304/400 [01:57<00:37,  2.56it/s]Eval NutAssemblySquareImage 2/2:  80% 320/400 [02:03<00:31,  2.55it/s]Eval NutAssemblySquareImage 2/2:  84% 336/400 [02:09<00:24,  2.56it/s]Eval NutAssemblySquareImage 2/2:  88% 352/400 [02:16<00:18,  2.58it/s]Eval NutAssemblySquareImage 2/2:  92% 368/400 [02:22<00:12,  2.60it/s]Eval NutAssemblySquareImage 2/2:  96% 384/400 [02:28<00:06,  2.60it/s]Eval NutAssemblySquareImage 2/2: 100% 400/400 [02:34<00:00,  2.62it/s]                                                                      Traceback (most recent call last):
+  File "/workspace/docker/run_fault_sweep.py", line 84, in <module>
+    main()
+  File "/workspace/docker/run_fault_sweep.py", line 65, in main
+    score = run_one(policy, cfg, dataset, f"{base_dir}/baseline", "robot0_joint1", None, None)
+  File "/workspace/docker/run_fault_sweep.py", line 45, in run_one
+    with open(os.path.join(output_dir, "eval_log.json"), "w") as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/results/phase3/square/baseline/eval_log.json'
+[0m=================== DONE square ===================
+Mon Aug  3 10:50:08 UTC 2026
