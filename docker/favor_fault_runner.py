@@ -25,6 +25,20 @@ import robomimic.utils.file_utils as FileUtils
 
 from fault_injector import FaultInjector
 
+# RobomimicImageWrapper is a plain gym.Env (not gym.Wrapper), so it does NOT
+# forward unknown attribute lookups to self.env the way gym.Wrapper does.
+# This breaks the call chain AsyncVectorEnv.call('get_fault_info') needs to
+# reach FaultInjector, which sits one level further in (env.env.env from the
+# MultiStepWrapper's perspective). We patch this in at the CLASS level here
+# (never touching the official file on disk) -- purely additive: any existing
+# attribute lookup that already succeeds is unaffected, this only catches
+# names that would otherwise raise AttributeError.
+if not getattr(RobomimicImageWrapper, "_favor_getattr_patched", False):
+    def _favor_forward_getattr(self, name):
+        return getattr(self.env, name)
+    RobomimicImageWrapper.__getattr__ = _favor_forward_getattr
+    RobomimicImageWrapper._favor_getattr_patched = True
+
 
 class FaultRobomimicImageRunner(RobomimicImageRunner):
     def __init__(self, output_dir, dataset_path, shape_meta,

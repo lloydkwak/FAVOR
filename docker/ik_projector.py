@@ -18,10 +18,11 @@ def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask
     """
     Vectorized over an arbitrary leading batch dim N (e.g. N = n_envs * K).
     target_pos: (N,3)  target_rot: (N,3,3)  q_seed_batch: (N,7)
-    q_lo/q_hi/q_lock: (7,)  locked_mask: (7,) bool
-    Uses the FULL 6D (position+orientation) error with the closed-form 6x7
-    Jacobian -- previously only the position rows of J were used, so
-    orientation error never actually influenced the Newton step.
+    q_lo/q_hi: (7,)  locked_mask: (7,) bool
+    q_lock: (N,7) -- PER-SAMPLE lock vector (not just per-joint-shared), since
+    different environments in the batch generally have different actual lock
+    values (each env's random reset() produces a different onset angle for
+    the "locked" joint -- verified empirically to differ across resets).
     """
     N = q_seed_batch.shape[0]
     q = q_seed_batch.clone()
@@ -44,7 +45,7 @@ def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask
         q = q + dq
         q = torch.clamp(q, q_lo, q_hi)
         if locked_mask.any():
-            q[:, locked_mask] = q_lock.expand(N, -1)[:, locked_mask]
+            q[:, locked_mask] = q_lock[:, locked_mask]     # q_lock is (N,7) now
 
     J, final_pos, final_rot = panda_jacobian(q)
     pos_err = (target_pos - final_pos).norm(dim=-1)
@@ -67,11 +68,11 @@ def _matrix_to_rot6d(R):
 
 def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters):
     """
-    raw_clean: (B, Tp, Da) on ANY device -- moved to CPU internally (IK is
-    CPU-bound per hardware spec), moved back to original device on return.
-    Vectorizes over (B*K) within each waypoint; loops only over Tp (16),
-    not B*Tp (80), preserving the sequential warm-start chain across
-    waypoints (each waypoint's seed = previous waypoint's chosen solution).
+    raw_clean: (B, Tp, Da) on ANY device -- moved to CPU internally.
+    fault_spec['q_lock']: either a python scalar (broadcast to all B envs,
+    used by unit tests / single-env callers) or a torch tensor of shape (B,)
+    giving each environment's OWN actual lock value (the normal path via
+    favor_policy.py's live env_ref.call('get_fault_info') RPC).
     """
     orig_device = raw_clean.device
     dtype = torch.float32
@@ -81,16 +82,18 @@ def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters):
     B, Tp, Da = raw_clean_cpu.shape
 
     joint_idx = fault_spec['joint_idx']
-    q_lock_scalar = fault_spec['q_lock']
+    q_lock_raw = fault_spec['q_lock']
+    if isinstance(q_lock_raw, torch.Tensor):
+        q_lock_per_env = q_lock_raw.detach().to(cpu, dtype=dtype).reshape(B)
+    else:
+        q_lock_per_env = torch.full((B,), float(q_lock_raw), dtype=dtype)
+
     q_lo = fault_spec['q_lo'].to(cpu, dtype=dtype)
     q_hi = fault_spec['q_hi'].to(cpu, dtype=dtype)
     is_locked = fault_spec['fault_type'] == 'locked'
 
     locked_mask = torch.zeros(7, dtype=torch.bool)
     locked_mask[joint_idx] = is_locked
-    q_lock_vec = torch.zeros(7, dtype=dtype)
-    if is_locked:
-        q_lock_vec[joint_idx] = q_lock_scalar
 
     corrected = raw_clean_cpu.clone()
     q_seed = q_prev_seed.detach().to(cpu, dtype=dtype).clone()  # (7,) or (B,7)
@@ -105,16 +108,23 @@ def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters):
         seeds = torch.rand(B, K, 7, dtype=dtype) * (q_hi - q_lo) + q_lo
         seeds[:, 0, :] = q_seed                                    # warm start, per-env
         if locked_mask.any():
-            seeds[:, :, joint_idx] = q_lock_scalar
+            seeds[:, :, joint_idx] = q_lock_per_env.unsqueeze(1)   # (B,1) broadcasts over K
+
+        # per-(env,K-seed) lock vector: (B,K,7), only joint_idx column set,
+        # using that ENV's own q_lock (not shared across envs)
+        q_lock_vec_bk = torch.zeros(B, K, 7, dtype=dtype)
+        if locked_mask.any():
+            q_lock_vec_bk[:, :, joint_idx] = q_lock_per_env.unsqueeze(1)
 
         N = B * K
         seeds_flat = seeds.reshape(N, 7)
         target_pos_flat = pos_k.unsqueeze(1).expand(B, K, 3).reshape(N, 3)
         target_rot_flat = target_rot_k.unsqueeze(1).expand(B, K, 3, 3).reshape(N, 3, 3)
+        q_lock_vec_flat = q_lock_vec_bk.reshape(N, 7)
 
         q_sol_flat, pos_err_flat, rot_err_flat = solve_batch_ik(
             target_pos_flat, target_rot_flat, seeds_flat, q_lo, q_hi,
-            locked_mask, q_lock_vec, iters)
+            locked_mask, q_lock_vec_flat, iters)
 
         q_sol = q_sol_flat.reshape(B, K, 7)
         pos_err = pos_err_flat.reshape(B, K)
@@ -147,8 +157,7 @@ def project_waypoints(raw_clean, fault_spec, q_prev_seed, K=64, iters=5):
 class ProjectWaypoints:
     """Stateful wrapper so callers can read the final joint seed after a call
     (favor_policy.py uses this to carry warm-start continuity across steps).
-    last_q_seed is now (B,7) -- one seed per environment, not a single (7,)
-    vector -- since IK is vectorized across the batch."""
+    last_q_seed is (B,7) -- one seed per environment."""
     def __init__(self, K=64, iters=5):
         self.K = K
         self.iters = iters

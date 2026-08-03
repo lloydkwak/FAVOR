@@ -18,11 +18,14 @@ from diffusion_policy.common.pytorch_util import dict_apply
 
 
 class FavorHybridImagePolicy:
-    def __init__(self, base_policy, fault_spec=None, projector=None):
+    def __init__(self, base_policy, fault_spec=None, projector=None, env_ref=None):
         self.base = base_policy
-        self.fault_spec = fault_spec      # None => pure passthrough (== B1)
+        self.fault_spec = fault_spec      # static part: joint_idx / fault_type / severity (same for all envs in one runner)
         self.projector = projector        # Phase 4-2+: callable(raw_clean, fault_spec, q_prev_seed) -> raw_corrected
         self._q_prev_seed = None          # warm-start state across waypoints/steps within an episode
+        self.env_ref = env_ref            # AsyncVectorEnv reference -- used to pull PER-ENV q_lock live via RPC,
+                                           # since the actual lock value is only known after each env's own
+                                           # random reset() and differs across envs (see FaultInjector.get_fault_info)
 
     # -- passthrough attributes used by RobomimicImageRunner's run() loop --
     @property
@@ -82,12 +85,20 @@ class FavorHybridImagePolicy:
                 import torch as _torch
                 B = raw_clean.shape[0]
                 if self._q_prev_seed is None:
-                    B_env = raw_clean.shape[0]
-                    self._q_prev_seed = _torch.zeros(B_env, 7, dtype=raw_clean.dtype, device=raw_clean.device)
-                raw_corrected = self.projector(raw_clean, self.fault_spec, self._q_prev_seed)
-                # projector mutates its own internal seed per-waypoint; we keep the
-                # final joint config of this call as the seed for the NEXT call
-                # (next denoising step / next control cycle), preserving continuity.
+                    self._q_prev_seed = _torch.zeros(B, 7, dtype=raw_clean.dtype, device=raw_clean.device)
+
+                per_env_fault_spec = dict(self.fault_spec)
+                if self.env_ref is not None:
+                    # Pull the REAL, per-environment lock value live -- each env's
+                    # random reset() produced a different onset value (verified
+                    # empirically: -2.644/-2.646/-2.624 across 3 resets of the
+                    # same joint). A single hardcoded q_lock would silently solve
+                    # the wrong problem for every env except by coincidence.
+                    infos = self.env_ref.call('get_fault_info')
+                    q_locks = [info['q_lock'] if info['q_lock'] is not None else 0.0 for info in infos]
+                    per_env_fault_spec['q_lock'] = _torch.tensor(q_locks, dtype=raw_clean.dtype, device=raw_clean.device)
+
+                raw_corrected = self.projector(raw_clean, per_env_fault_spec, self._q_prev_seed)
                 self._q_prev_seed = self.projector.last_q_seed
             norm_corrected = base.normalizer["action"].normalize(raw_corrected)
 
