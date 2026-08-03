@@ -21,7 +21,8 @@ class FavorHybridImagePolicy:
     def __init__(self, base_policy, fault_spec=None, projector=None):
         self.base = base_policy
         self.fault_spec = fault_spec      # None => pure passthrough (== B1)
-        self.projector = projector        # Phase 4-2+: callable(raw_clean) -> raw_corrected
+        self.projector = projector        # Phase 4-2+: callable(raw_clean, fault_spec, q_prev_seed) -> raw_corrected
+        self._q_prev_seed = None          # warm-start state across waypoints/steps within an episode
 
     # -- passthrough attributes used by RobomimicImageRunner's run() loop --
     @property
@@ -43,6 +44,7 @@ class FavorHybridImagePolicy:
     def reset(self):
         if hasattr(self.base, "reset"):
             self.base.reset()
+        self._q_prev_seed = None  # cleared at episode start; projector will seed from zeros on first call
 
     # -- E-C-I hook --
     def conditional_sample(self, condition_data, condition_mask,
@@ -77,7 +79,16 @@ class FavorHybridImagePolicy:
             if self.projector is None:
                 raw_corrected = raw_clean            # Phase 4-1: identity
             else:
-                raw_corrected = self.projector(raw_clean, self.fault_spec)
+                import torch as _torch
+                B = raw_clean.shape[0]
+                if self._q_prev_seed is None:
+                    B_env = raw_clean.shape[0]
+                    self._q_prev_seed = _torch.zeros(B_env, 7, dtype=raw_clean.dtype, device=raw_clean.device)
+                raw_corrected = self.projector(raw_clean, self.fault_spec, self._q_prev_seed)
+                # projector mutates its own internal seed per-waypoint; we keep the
+                # final joint config of this call as the seed for the NEXT call
+                # (next denoising step / next control cycle), preserving continuity.
+                self._q_prev_seed = self.projector.last_q_seed
             norm_corrected = base.normalizer["action"].normalize(raw_corrected)
 
             # === I: schedule-gated blend ===
