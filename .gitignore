@@ -3,3 +3,6 @@ results/
 diffusion_policy/
 __pycache__/
 *.pyc
+results/
+data/robomimic/
+diffusion_policy/data/
