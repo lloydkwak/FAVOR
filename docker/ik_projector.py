@@ -12,7 +12,7 @@ def rotmat_to_axis_angle(R):
     denom = 2 * torch.sin(theta).clamp(min=1e-6).unsqueeze(-1)
     return axis / denom * theta.unsqueeze(-1)
 
-def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask, iters, damping=1e-3):
+def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask, q_lock, iters, damping=1e-3):
     K = q_seed_batch.shape[0]
     q = q_seed_batch.clone()
     for _ in range(iters):
@@ -31,7 +31,7 @@ def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask
         q = q + dq
         q = torch.clamp(q, q_lo.unsqueeze(0), q_hi.unsqueeze(0))
         if locked_mask.any():
-            q[:, locked_mask] = q_lo.unsqueeze(0).expand(K, -1)[:, locked_mask]
+            q[:, locked_mask] = q_lock.unsqueeze(0).expand(K, -1)[:, locked_mask]
     J, final_pos, final_rot = panda_jacobian(q)
     pos_err = (target_pos.unsqueeze(0).expand(K, -1) - final_pos).norm(dim=-1)
     return q, pos_err
@@ -66,7 +66,10 @@ def project_waypoints(raw_clean, fault_spec, q_prev_seed, K=64, iters=5):
             if locked_mask.any():
                 seeds[:, joint_idx] = q_lock
 
-            q_sol, pos_err = solve_batch_ik(pos, target_rot, seeds, q_lo, q_hi, locked_mask, iters)
+            q_lock_vec = torch.zeros(7, device=device, dtype=dtype)
+            if locked_mask.any():
+                q_lock_vec[joint_idx] = q_lock
+            q_sol, pos_err = solve_batch_ik(pos, target_rot, seeds, q_lo, q_hi, locked_mask, q_lock_vec, iters)
             converged = pos_err < 0.01
             if converged.any():
                 dists = (q_sol[converged] - q_seed.unsqueeze(0)).norm(dim=-1)
