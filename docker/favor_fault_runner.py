@@ -24,6 +24,7 @@ from diffusion_policy.env.robomimic.robomimic_image_wrapper import RobomimicImag
 import robomimic.utils.file_utils as FileUtils
 
 from fault_injector import FaultInjector
+from joint_actuation_wrapper import JointActuationWrapper
 
 # RobomimicImageWrapper is a plain gym.Env (not gym.Wrapper), so it does NOT
 # forward unknown attribute lookups to self.env the way gym.Wrapper does.
@@ -48,7 +49,12 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             max_steps=400, n_obs_steps=2, n_action_steps=8,
             render_obs_key='agentview_image', fps=10, crf=22,
             past_action=False, abs_action=True, tqdm_interval_sec=5.0,
-            n_envs=None):
+            n_envs=None, actuation_mode='osc', joint_output_max=0.05):
+        # actuation_mode='osc'  -> unchanged existing behavior (OSC_POSE, EE-pose actions)
+        # actuation_mode='joint' -> JOINT_POSITION controller, action = q_target(7)+gripper(1),
+        #                           self.abs_action forced False below so run() (inherited,
+        #                           UNMODIFIED) skips undo_transform_action and passes our
+        #                           joint-target action straight to env.step().
         # Deliberately NOT calling super().__init__() — it builds env_fn
         # internally with no hook point. Instead we re-run the same
         # construction logic here, with one line changed (FaultInjector
@@ -67,14 +73,29 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
         env_meta['env_kwargs']['use_object_obs'] = False
 
         rotation_transformer = None
-        if abs_action:
-            env_meta['env_kwargs']['controller_configs']['control_delta'] = False
-            rotation_transformer = RotationTransformer('axis_angle', 'rotation_6d')
+        if actuation_mode == 'osc':
+            if abs_action:
+                env_meta['env_kwargs']['controller_configs']['control_delta'] = False
+                rotation_transformer = RotationTransformer('axis_angle', 'rotation_6d')
+        elif actuation_mode == 'joint':
+            from robosuite.controllers import load_controller_config
+            joint_ctrl_cfg = load_controller_config(default_controller="JOINT_POSITION")
+            joint_ctrl_cfg['output_max'] = joint_output_max
+            joint_ctrl_cfg['output_min'] = -joint_output_max
+            env_meta['env_kwargs']['controller_configs'] = joint_ctrl_cfg
+            # abs_action stays True for IK/dataset bookkeeping upstream (e.g. FK/rotation
+            # conventions when computing q_target), but run() must NOT call
+            # undo_transform_action on our joint-target action -- forced False below.
+        else:
+            raise ValueError(f"unknown actuation_mode: {actuation_mode}")
 
         def make_wrapped(enable_render):
             robomimic_env = create_env(env_meta=env_meta, shape_meta=shape_meta, enable_render=enable_render)
             robomimic_env.env.hard_reset = False
-            faulted = FaultInjector(robomimic_env, fault_joint_name, fault_type, fault_severity)
+            inner = robomimic_env
+            if actuation_mode == 'joint':
+                inner = JointActuationWrapper(inner, output_max=joint_output_max)
+            faulted = FaultInjector(inner, fault_joint_name, fault_type, fault_severity)
             return MultiStepWrapper(
                 VideoRecordingWrapper(
                     RobomimicImageWrapper(
@@ -153,6 +174,7 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
         self.past_action = past_action
         self.max_steps = max_steps
         self.rotation_transformer = rotation_transformer
-        self.abs_action = abs_action
+        self.abs_action = abs_action if actuation_mode == 'osc' else False
+        self.actuation_mode = actuation_mode
         self.tqdm_interval_sec = tqdm_interval_sec
     # run() inherited unchanged from RobomimicImageRunner

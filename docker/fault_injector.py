@@ -35,7 +35,8 @@ class FaultInjector(gym.Wrapper):
         self._orig_jnt_range = None
 
     def _sim(self):
-        return self.env.env.sim
+        from sim_utils import find_sim
+        return find_sim(self.env)
 
     def _qpos_addr(self, sim):
         jid = sim.model.joint_name2id(self.joint_name)
