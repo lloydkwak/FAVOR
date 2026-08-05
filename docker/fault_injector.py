@@ -52,6 +52,19 @@ class FaultInjector(gym.Wrapper):
         sev = float(self.severity) if self.severity is not None else 0.0
         return np.array([active, joint_idx, type_code, q_val, sev], dtype=np.float32)
 
+    def get_current_qpos(self):
+        """Public RPC-able getter for the robot's ACTUAL current joint
+        configuration (all 7 joints), regardless of fault state. Needed so
+        FavorHybridImagePolicy can seed its q_ref continuity anchor with the
+        real robot pose at episode start, instead of an arbitrary zero
+        vector -- the latter actively hurt IK once joint-space regularization
+        was introduced (confirmed empirically: waypoint-0 pos_err jumped
+        from 0.005 to 0.28 when q_ref was a meaningless all-zeros vector)."""
+        sim = self._sim()
+        joint_names = [f"robot0_joint{i}" for i in range(1, 8)]
+        qpos = [sim.data.qpos[sim.model.jnt_qposadr[sim.model.joint_name2id(n)]] for n in joint_names]
+        return qpos
+
     def get_fault_info(self):
         """Public RPC-able getter -- called via AsyncVectorEnv.call('get_fault_info')
         from the main process (where the policy lives) at any time, not tied to

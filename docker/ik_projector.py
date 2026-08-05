@@ -16,6 +16,9 @@ def rotmat_to_axis_angle(R):
 
 def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask, q_lock,
                     q_ref, iters, damping=1e-4, lambda_reg=0.5):
+    """lambda_reg may be a python scalar (broadcast to all N) or a (N,) tensor
+    (per-sample regularization strength -- used by the two-population
+    explore/continuity seed strategy in _project_waypoints_impl)."""
     """
     Vectorized over an arbitrary leading batch dim N.
     NEW: joint-space regularized Gauss-Newton (was task-space DLS with no
@@ -34,7 +37,11 @@ def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask
     """
     N = q_seed_batch.shape[0]
     q = q_seed_batch.clone()
-    reg_I = (damping + lambda_reg) * torch.eye(7, device=q.device, dtype=q.dtype).unsqueeze(0)
+    if not isinstance(lambda_reg, torch.Tensor):
+        lambda_reg = torch.full((N,), float(lambda_reg), device=q.device, dtype=q.dtype)
+    lambda_reg = lambda_reg.reshape(N, 1, 1)
+    reg_I = (damping) * torch.eye(7, device=q.device, dtype=q.dtype).unsqueeze(0) \
+            + lambda_reg * torch.eye(7, device=q.device, dtype=q.dtype).unsqueeze(0)
 
     for _ in range(iters):
         J, cur_pos, cur_rot = panda_jacobian(q)          # J: (N,6,7)
@@ -49,7 +56,7 @@ def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask
 
         JtJ = J_full.transpose(-1, -2) @ J_full            # (N,7,7)
         Jte = (J_full.transpose(-1, -2) @ e.unsqueeze(-1)).squeeze(-1)  # (N,7,6)@(N,6,1) -> (N,7) -- J^T e
-        reg_rhs = lambda_reg * (q_ref - q)                 # (N,7)
+        reg_rhs = lambda_reg.reshape(N, 1) * (q_ref - q)   # (N,7)
 
         A = JtJ + reg_I
         b = Jte + reg_rhs
@@ -120,10 +127,21 @@ def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters, lambda
         if locked_mask.any():
             q_lock_vec_bk[:, :, joint_idx] = q_lock_per_env.unsqueeze(1)
 
-        # q_ref: regularize EVERY seed toward this waypoint's continuity
-        # anchor -- the PREVIOUS waypoint's chosen solution (same for all K
-        # seeds within an env, since they all should continue from the same
-        # prior arm configuration).
+        # Two-population regularization strategy: pulling ALL K seeds toward
+        # the same q_ref collapses multi-start diversity (confirmed
+        # empirically -- when the true target is far from q_ref, this made
+        # convergence WORSE, not better, since all 64 restarts funnel into
+        # the same q_ref-adjacent local minimum instead of spreading out).
+        # Instead: half the seeds explore freely (lambda_reg effectively 0
+        # via a per-seed lambda vector), half get pulled toward q_ref
+        # (continuity-preferring). Final selection (below) already prefers
+        # converged+close-to-q_ref, so this preserves both broad search AND
+        # continuity preference without sacrificing either.
+        half = K // 2
+        lambda_per_seed = torch.zeros(K, dtype=dtype)
+        lambda_per_seed[half:] = 1.0  # multiplier; actual lambda_reg value applied below
+        lambda_per_seed_bk = lambda_per_seed.unsqueeze(0).expand(B, K).clone()
+
         q_ref_bk = q_seed.unsqueeze(1).expand(B, K, 7).clone()
 
         N = B * K
@@ -132,10 +150,11 @@ def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters, lambda
         target_rot_flat = target_rot_k.unsqueeze(1).expand(B, K, 3, 3).reshape(N, 3, 3)
         q_lock_vec_flat = q_lock_vec_bk.reshape(N, 7)
         q_ref_flat = q_ref_bk.reshape(N, 7)
+        lambda_flat = (lambda_per_seed_bk.reshape(N) * lambda_reg)
 
         q_sol_flat, pos_err_flat, rot_err_flat = solve_batch_ik(
             target_pos_flat, target_rot_flat, seeds_flat, q_lo, q_hi,
-            locked_mask, q_lock_vec_flat, q_ref_flat, iters, lambda_reg=lambda_reg)
+            locked_mask, q_lock_vec_flat, q_ref_flat, iters, lambda_reg=lambda_flat)
 
         q_sol = q_sol_flat.reshape(B, K, 7)
         pos_err = pos_err_flat.reshape(B, K)

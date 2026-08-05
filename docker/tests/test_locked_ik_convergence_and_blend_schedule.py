@@ -46,7 +46,9 @@ raw_clean = out['action_pred'][:, :16, :]
 q_lo = torch.tensor([-2.8973,-1.7628,-2.8973,-3.0718,-2.8973,-0.0175,-2.8973], dtype=torch.float32)
 q_hi = torch.tensor([ 2.8973, 1.7628, 2.8973,-0.0698, 2.8973, 3.7525, 2.8973], dtype=torch.float32)
 fault_spec_locked = {'joint_idx': 3, 'q_lock': float(q_lock_real), 'fault_type': 'locked', 'q_lo': q_lo, 'q_hi': q_hi}
-q_seed = torch.zeros(1, 7)
+q_current = wrapped.env.env.sim.data.qpos[[wrapped.env.env.sim.model.jnt_qposadr[wrapped.env.env.sim.model.joint_name2id(f"robot0_joint{i}")] for i in range(1,8)]]
+q_seed = torch.tensor(q_current, dtype=torch.float32).unsqueeze(0)
+print("using REAL current qpos as q_ref seed:", q_seed)
 
 errs = []
 orig = ik_projector.solve_batch_ik
@@ -55,7 +57,7 @@ def traced(*a, **kw):
     errs.append((pos_err.min().item(), rot_err.min().item()))
     return q_sol, pos_err, rot_err
 ik_projector.solve_batch_ik = traced
-_project_waypoints_impl(raw_clean, fault_spec_locked, q_seed, K=64, iters=5)
+_project_waypoints_impl(raw_clean, fault_spec_locked, q_seed, K=64, iters=5, lambda_reg=0.5)
 ik_projector.solve_batch_ik = orig
 
 print("=== LOCKED (real q_lock) IK convergence per waypoint ===")

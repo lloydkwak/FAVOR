@@ -93,7 +93,15 @@ class FavorHybridImagePolicy:
                 import torch as _torch
                 B = raw_clean.shape[0]
                 if self._q_prev_seed is None:
-                    self._q_prev_seed = _torch.zeros(B, 7, dtype=raw_clean.dtype, device=raw_clean.device)
+                    if self.env_ref is not None:
+                        # Seed with the ROBOT'S ACTUAL current joint config,
+                        # not an arbitrary zero vector -- critical now that
+                        # C uses joint-space regularization toward q_ref.
+                        qpos_list = self.env_ref.call('get_current_qpos')
+                        self._q_prev_seed = _torch.tensor(
+                            [list(q) for q in qpos_list], dtype=raw_clean.dtype, device=raw_clean.device)
+                    else:
+                        self._q_prev_seed = _torch.zeros(B, 7, dtype=raw_clean.dtype, device=raw_clean.device)
 
                 per_env_fault_spec = dict(self.fault_spec)
                 if self.env_ref is not None:
