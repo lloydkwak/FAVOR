@@ -14,18 +14,28 @@ def rotmat_to_axis_angle(R):
     return axis / denom * theta.unsqueeze(-1)
 
 
-def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask, q_lock, iters, damping=1e-3):
+def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask, q_lock,
+                    q_ref, iters, damping=1e-4, lambda_reg=0.5):
     """
-    Vectorized over an arbitrary leading batch dim N (e.g. N = n_envs * K).
-    target_pos: (N,3)  target_rot: (N,3,3)  q_seed_batch: (N,7)
-    q_lo/q_hi: (7,)  locked_mask: (7,) bool
-    q_lock: (N,7) -- PER-SAMPLE lock vector (not just per-joint-shared), since
-    different environments in the batch generally have different actual lock
-    values (each env's random reset() produces a different onset angle for
-    the "locked" joint -- verified empirically to differ across resets).
+    Vectorized over an arbitrary leading batch dim N.
+    NEW: joint-space regularized Gauss-Newton (was task-space DLS with no
+    joint-space preference at all). Solves:
+        dq* = argmin_dq ||J dq - e||^2 + lambda_reg * ||q + dq - q_ref||^2
+    i.e. minimize pose error while staying close to q_ref (the PREVIOUS
+    waypoint's chosen solution) -- not just "any solution that happens to
+    satisfy the pos/rot tolerance". This directly targets the failure mode
+    found empirically: independently-solved waypoints could jump to
+    unrelated arm configurations (different elbow posture etc.), causing
+    pos_err to grow with waypoint distance (0.005 -> 0.124 over 16
+    waypoints) even though the true reachable-set boundary wasn't the
+    limiting factor everywhere.
+    q_ref: (N,7) -- what to regularize toward (typically broadcast copies of
+    the previous waypoint's solution for all K seeds of one env).
     """
     N = q_seed_batch.shape[0]
     q = q_seed_batch.clone()
+    reg_I = (damping + lambda_reg) * torch.eye(7, device=q.device, dtype=q.dtype).unsqueeze(0)
+
     for _ in range(iters):
         J, cur_pos, cur_rot = panda_jacobian(q)          # J: (N,6,7)
         pos_err = target_pos - cur_pos
@@ -37,15 +47,18 @@ def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask
             J_full = J_full.clone()
             J_full[:, :, locked_mask] = 0.0
 
-        JJt = J_full @ J_full.transpose(-1, -2)           # (N,6,6)
-        lam_I = damping * torch.eye(6, device=q.device, dtype=q.dtype).unsqueeze(0)
-        inv = torch.linalg.solve(JJt + lam_I, e.unsqueeze(-1)).squeeze(-1)  # (N,6)
-        dq = torch.einsum('nij,ni->nj', J_full, inv)      # (N,7)
+        JtJ = J_full.transpose(-1, -2) @ J_full            # (N,7,7)
+        Jte = (J_full.transpose(-1, -2) @ e.unsqueeze(-1)).squeeze(-1)  # (N,7,6)@(N,6,1) -> (N,7) -- J^T e
+        reg_rhs = lambda_reg * (q_ref - q)                 # (N,7)
+
+        A = JtJ + reg_I
+        b = Jte + reg_rhs
+        dq = torch.linalg.solve(A, b.unsqueeze(-1)).squeeze(-1)
 
         q = q + dq
         q = torch.clamp(q, q_lo, q_hi)
         if locked_mask.any():
-            q[:, locked_mask] = q_lock[:, locked_mask]     # q_lock is (N,7) now
+            q[:, locked_mask] = q_lock[:, locked_mask]
 
     J, final_pos, final_rot = panda_jacobian(q)
     pos_err = (target_pos - final_pos).norm(dim=-1)
@@ -54,12 +67,6 @@ def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask
 
 
 def _rot6d_to_matrix(rot6):
-    """MUST match pytorch3d.transforms.rotation_6d_to_matrix's convention
-    (ROW-based, stack(dim=-2)), since that is what diffusion_policy's
-    RotationTransformer actually uses for the action's rotation_6d encoding.
-    A column-based version (dim=-1) silently computes a DIFFERENT rotation
-    (related to the transpose), which was confirmed empirically: rot_err
-    stayed near pi even for the unconstrained (no-fault) sanity check."""
     a1, a2 = rot6[..., 0:3], rot6[..., 3:6]
     a1 = a1 / a1.norm(dim=-1, keepdim=True).clamp(min=1e-6)
     a2 = a2 - (a1 * a2).sum(dim=-1, keepdim=True) * a1
@@ -69,18 +76,10 @@ def _rot6d_to_matrix(rot6):
 
 
 def _matrix_to_rot6d(R):
-    """Matches pytorch3d.transforms.matrix_to_rotation_6d: first two ROWS."""
     return torch.cat([R[..., 0, :], R[..., 1, :]], dim=-1)
 
 
-def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters):
-    """
-    raw_clean: (B, Tp, Da) on ANY device -- moved to CPU internally.
-    fault_spec['q_lock']: either a python scalar (broadcast to all B envs,
-    used by unit tests / single-env callers) or a torch tensor of shape (B,)
-    giving each environment's OWN actual lock value (the normal path via
-    favor_policy.py's live env_ref.call('get_fault_info') RPC).
-    """
+def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters, lambda_reg=0.5):
     orig_device = raw_clean.device
     dtype = torch.float32
     cpu = torch.device("cpu")
@@ -108,30 +107,35 @@ def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters):
         q_seed = q_seed.unsqueeze(0).expand(B, -1).clone()
 
     for k in range(Tp):
-        pos_k = raw_clean_cpu[:, k, 0:3]                          # (B,3)
+        pos_k = raw_clean_cpu[:, k, 0:3]
         rot6_k = raw_clean_cpu[:, k, 3:9]
-        target_rot_k = _rot6d_to_matrix(rot6_k)                   # (B,3,3)
+        target_rot_k = _rot6d_to_matrix(rot6_k)
 
         seeds = torch.rand(B, K, 7, dtype=dtype) * (q_hi - q_lo) + q_lo
-        seeds[:, 0, :] = q_seed                                    # warm start, per-env
+        seeds[:, 0, :] = q_seed
         if locked_mask.any():
-            seeds[:, :, joint_idx] = q_lock_per_env.unsqueeze(1)   # (B,1) broadcasts over K
+            seeds[:, :, joint_idx] = q_lock_per_env.unsqueeze(1)
 
-        # per-(env,K-seed) lock vector: (B,K,7), only joint_idx column set,
-        # using that ENV's own q_lock (not shared across envs)
         q_lock_vec_bk = torch.zeros(B, K, 7, dtype=dtype)
         if locked_mask.any():
             q_lock_vec_bk[:, :, joint_idx] = q_lock_per_env.unsqueeze(1)
+
+        # q_ref: regularize EVERY seed toward this waypoint's continuity
+        # anchor -- the PREVIOUS waypoint's chosen solution (same for all K
+        # seeds within an env, since they all should continue from the same
+        # prior arm configuration).
+        q_ref_bk = q_seed.unsqueeze(1).expand(B, K, 7).clone()
 
         N = B * K
         seeds_flat = seeds.reshape(N, 7)
         target_pos_flat = pos_k.unsqueeze(1).expand(B, K, 3).reshape(N, 3)
         target_rot_flat = target_rot_k.unsqueeze(1).expand(B, K, 3, 3).reshape(N, 3, 3)
         q_lock_vec_flat = q_lock_vec_bk.reshape(N, 7)
+        q_ref_flat = q_ref_bk.reshape(N, 7)
 
         q_sol_flat, pos_err_flat, rot_err_flat = solve_batch_ik(
             target_pos_flat, target_rot_flat, seeds_flat, q_lo, q_hi,
-            locked_mask, q_lock_vec_flat, iters)
+            locked_mask, q_lock_vec_flat, q_ref_flat, iters, lambda_reg=lambda_reg)
 
         q_sol = q_sol_flat.reshape(B, K, 7)
         pos_err = pos_err_flat.reshape(B, K)
@@ -142,6 +146,10 @@ def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters):
         for b in range(B):
             if converged[b].any():
                 cand = q_sol[b][converged[b]]
+                # NEW selection: among converged, pick the one closest to
+                # q_ref (continuity), not just "any converged" -- with the
+                # regularized solve this is mostly redundant (solutions
+                # already pulled toward q_ref) but breaks ties principled-ly.
                 dists = (cand - q_seed[b].unsqueeze(0)).norm(dim=-1)
                 best = cand[dists.argmin()]
             else:
@@ -156,21 +164,20 @@ def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters):
     return corrected.to(orig_device, dtype=raw_clean.dtype), q_seed.to(orig_device, dtype=raw_clean.dtype)
 
 
-def project_waypoints(raw_clean, fault_spec, q_prev_seed, K=64, iters=5):
-    corrected, _ = _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters)
+def project_waypoints(raw_clean, fault_spec, q_prev_seed, K=64, iters=5, lambda_reg=0.5):
+    corrected, _ = _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters, lambda_reg)
     return corrected
 
 
 class ProjectWaypoints:
-    """Stateful wrapper so callers can read the final joint seed after a call
-    (favor_policy.py uses this to carry warm-start continuity across steps).
-    last_q_seed is (B,7) -- one seed per environment."""
-    def __init__(self, K=64, iters=5):
+    def __init__(self, K=64, iters=5, lambda_reg=0.5):
         self.K = K
         self.iters = iters
+        self.lambda_reg = lambda_reg
         self.last_q_seed = None
 
     def __call__(self, raw_clean, fault_spec, q_prev_seed):
-        corrected, last_seed = _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, self.K, self.iters)
+        corrected, last_seed = _project_waypoints_impl(
+            raw_clean, fault_spec, q_prev_seed, self.K, self.iters, self.lambda_reg)
         self.last_q_seed = last_seed
         return corrected
