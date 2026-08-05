@@ -16,7 +16,7 @@ from favor_fault_runner import FaultRobomimicImageRunner
 CKPT = "/workspace/data/checkpoints/lift_ph/data/experiments/image/lift_ph/diffusion_policy_cnn/train_0/checkpoints/latest.ckpt"
 DATASET = "/workspace/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5"
 TEST_START_SEED = 10000
-N_TEST = 20
+N_TEST = 28
 
 payload = torch.load(open(CKPT, 'rb'), pickle_module=dill)
 cfg = payload['cfg']
@@ -43,7 +43,7 @@ def make_runner(output_dir, joint_name):
     )
 
 results = {}
-for joint_name, joint_idx in [("robot0_joint1", 0), ("robot0_joint4", 3)]:
+for joint_name, joint_idx in [("robot0_joint3", 2)]:
     # B1: same runner, plain base_policy (no projector at all)
     runner_b1 = make_runner(f"/workspace/results/_paired_{joint_name}_b1", joint_name)
     log_b1 = runner_b1.run(base_policy)
