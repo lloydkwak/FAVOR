@@ -27,15 +27,26 @@ def _flange_transform(q):
     return T_flange
 
 
+# robosuite's default single-arm robot placement in the world frame.
+# Verified empirically (docker/tests/test_fk_regression-era diagnostics):
+# sim.data.get_body_xpos('robot0_base') = [-0.56, 0.0, 0.912], and
+# sim.data.get_body_xmat('robot0_base') = identity, for the Lift task.
+# NOT yet independently re-verified for Can/Square -- if IK targets for
+# those tasks show a similarly-shaped systematic offset, re-check this first
+# rather than assuming it carries over (per project principle: measure, don't
+# assume).
+WORLD_BASE_POS = torch.tensor([-0.56, 0.0, 0.912])
+
+
 def compute_all_frames(q):
-    """Returns T_cumulative[0..7]: T_cumulative[i] = base -> frame after i DH
-    transforms have been applied (T_cumulative[0] = identity/base frame,
-    T_cumulative[7] = base -> joint7 frame, before the flange/grip_site offset).
-    Needed for the closed-form geometric Jacobian: joint i's (1-indexed) axis
-    and origin, expressed in the base frame, are the z-axis and translation
-    of T_cumulative[i-1]."""
+    """Returns T_cumulative[0..7] expressed in the WORLD frame (base offset
+    baked in), since all IK targets (raw policy actions, robosuite abs-action
+    convention) are in world frame. T_cumulative[0] = world<-base transform,
+    T_cumulative[7] = world<-joint7 frame, before the flange/grip_site offset."""
     batch_shape = q.shape[:-1]
-    frames = [torch.eye(4, dtype=q.dtype, device=q.device).expand(*batch_shape, 4, 4).clone()]
+    base = torch.eye(4, dtype=q.dtype, device=q.device).expand(*batch_shape, 4, 4).clone()
+    base[..., :3, 3] = WORLD_BASE_POS.to(dtype=q.dtype, device=q.device)
+    frames = [base]
     T = frames[0]
     for i in range(7):
         Ti = dh_transform(DH_A[i], DH_D[i], DH_ALPHA[i], q[..., i])

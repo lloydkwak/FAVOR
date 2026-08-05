@@ -54,16 +54,23 @@ def solve_batch_ik(target_pos, target_rot, q_seed_batch, q_lo, q_hi, locked_mask
 
 
 def _rot6d_to_matrix(rot6):
+    """MUST match pytorch3d.transforms.rotation_6d_to_matrix's convention
+    (ROW-based, stack(dim=-2)), since that is what diffusion_policy's
+    RotationTransformer actually uses for the action's rotation_6d encoding.
+    A column-based version (dim=-1) silently computes a DIFFERENT rotation
+    (related to the transpose), which was confirmed empirically: rot_err
+    stayed near pi even for the unconstrained (no-fault) sanity check."""
     a1, a2 = rot6[..., 0:3], rot6[..., 3:6]
     a1 = a1 / a1.norm(dim=-1, keepdim=True).clamp(min=1e-6)
     a2 = a2 - (a1 * a2).sum(dim=-1, keepdim=True) * a1
     a2 = a2 / a2.norm(dim=-1, keepdim=True).clamp(min=1e-6)
     a3 = torch.cross(a1, a2, dim=-1)
-    return torch.stack([a1, a2, a3], dim=-1)
+    return torch.stack([a1, a2, a3], dim=-2)  # ROWS, matches pytorch3d
 
 
 def _matrix_to_rot6d(R):
-    return torch.cat([R[..., :, 0], R[..., :, 1]], dim=-1)
+    """Matches pytorch3d.transforms.matrix_to_rotation_6d: first two ROWS."""
+    return torch.cat([R[..., 0, :], R[..., 1, :]], dim=-1)
 
 
 def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters):

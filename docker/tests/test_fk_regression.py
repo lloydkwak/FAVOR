@@ -1,3 +1,8 @@
+"""
+panda_fk now returns WORLD-frame positions directly (base offset baked in).
+This regression test compares against sim's world-frame gripper0_grip_site
+WITHOUT adding base_pos externally (that would double-count it).
+"""
 import sys
 sys.path.insert(0, "/workspace/diffusion_policy")
 sys.path.insert(0, "/workspace/docker")
@@ -23,18 +28,17 @@ for trial in range(10):
 
     grip_site_id = sim.model.site_name2id("gripper0_grip_site")
     grip_site_pos = sim.data.site_xpos[grip_site_id].copy()
-    base_pos = sim.data.get_body_xpos("robot0_base").copy()
 
     joint_names = [f"robot0_joint{i}" for i in range(1, 8)]
     qpos_addrs = [sim.model.get_joint_qpos_addr(n) for n in joint_names]
     q_actual = np.array([sim.data.qpos[a] for a in qpos_addrs])
     q_t = torch.tensor(q_actual, dtype=torch.float64).unsqueeze(0)
-    fk_pos, _ = panda_fk(q_t)
-    fk_world = base_pos + fk_pos.squeeze(0).numpy()
+    fk_pos, _ = panda_fk(q_t)          # world-frame directly now
+    fk_world = fk_pos.squeeze(0).numpy()
 
     diff = np.linalg.norm(fk_world - grip_site_pos)
     diffs.append(diff)
-    print(f"trial {trial}: q={np.round(q_actual,3)}  diff={diff*1000:.3f} mm")
+    print(f"trial {trial}: diff={diff*1000:.3f} mm")
     if diff > 0.005:
         FAILURES += 1
 
