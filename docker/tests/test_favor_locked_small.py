@@ -46,13 +46,12 @@ print("favor_nofault ->", results["favor_nofault"])
 # --- (b) FAVOR, joint4 locked at 0.0 (arbitrary fixed value for this smoke test) ---
 fault_spec_locked = {
     'joint_idx': 3,  # joint4 -> index 3
-    'q_lock': 0.0,
+    'q_lock': 0.0,   # placeholder -- overwritten live per-env via env_ref RPC every predict_action call
     'fault_type': 'locked',
     'q_lo': q_lo_full,
     'q_hi': q_hi_full,
 }
 projector2 = ProjectWaypoints(K=64, iters=5)
-favor_locked = FavorHybridImagePolicy(base_policy, fault_spec=fault_spec_locked, projector=projector2)
 
 runner2 = FaultRobomimicImageRunner(
     output_dir="/workspace/results/_4_2_locked_j4",
@@ -65,6 +64,7 @@ runner2 = FaultRobomimicImageRunner(
     render_obs_key=cfg.task.env_runner.render_obs_key,
     abs_action=cfg.task.env_runner.abs_action,
 )
+favor_locked = FavorHybridImagePolicy(base_policy, fault_spec=fault_spec_locked, projector=projector2, env_ref=runner2.env)
 log2 = runner2.run(favor_locked)
 results["favor_locked_j4"] = log2.get("test/mean_score")
 print("favor_locked_j4 ->", results["favor_locked_j4"])

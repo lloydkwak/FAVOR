@@ -25,6 +25,7 @@ def load_policy(ckpt_path):
     return policy, cfg
 
 def run_one(policy, cfg, dataset_path, output_dir, joint_name, fault_type, severity):
+    os.makedirs(output_dir, exist_ok=True)
     runner = FaultRobomimicImageRunner(
         output_dir=output_dir,
         dataset_path=dataset_path,
