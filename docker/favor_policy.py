@@ -18,7 +18,7 @@ from diffusion_policy.common.pytorch_util import dict_apply
 
 
 class FavorHybridImagePolicy:
-    def __init__(self, base_policy, fault_spec=None, projector=None, env_ref=None):
+    def __init__(self, base_policy, fault_spec=None, projector=None, env_ref=None, blend_floor=0.0):
         self.base = base_policy
         self.fault_spec = fault_spec      # static part: joint_idx / fault_type / severity (same for all envs in one runner)
         self.projector = projector        # Phase 4-2+: callable(raw_clean, fault_spec, q_prev_seed) -> raw_corrected
@@ -26,6 +26,14 @@ class FavorHybridImagePolicy:
         self.env_ref = env_ref            # AsyncVectorEnv reference -- used to pull PER-ENV q_lock live via RPC,
                                            # since the actual lock value is only known after each env's own
                                            # random reset() and differs across envs (see FaultInjector.get_fault_info)
+        self.blend_floor = blend_floor    # min correction weight even in early (high-noise) denoising steps.
+                                           # Motivation (empirically measured, not from literature -- no precedent
+                                           # for this bimodal/floored schedule): with pure sqrt(alpha_bar_t), the
+                                           # first ~10 steps (where the trajectory's overall shape gets decided)
+                                           # get blend_frac < 0.14, i.e. almost no correction, so the policy commits
+                                           # to a "pretend nothing is locked" trajectory shape before FAVOR gets a
+                                           # meaningful say. Default 0.0 preserves the original literature-aligned
+                                           # schedule exactly (backward compatible).
 
     # -- passthrough attributes used by RobomimicImageRunner's run() loop --
     @property
@@ -107,7 +115,7 @@ class FavorHybridImagePolicy:
             # see FAVOR_이론적_타당성_분석.md §3): correction weight increases
             # toward the END of denoising (alpha_prod_t -> 1), not the start.
             alpha_prod_t = scheduler.alphas_cumprod[t]
-            blend_frac = torch.sqrt(alpha_prod_t)
+            blend_frac = torch.clamp(torch.sqrt(alpha_prod_t), min=self.blend_floor)
             trajectory = (1 - blend_frac) * prev_sample + blend_frac * norm_corrected
 
         trajectory[condition_mask] = condition_data[condition_mask]
