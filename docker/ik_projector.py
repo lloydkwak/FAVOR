@@ -200,3 +200,95 @@ class ProjectWaypoints:
             raw_clean, fault_spec, q_prev_seed, self.K, self.iters, self.lambda_reg)
         self.last_q_seed = last_seed
         return corrected
+
+
+def project_waypoints_to_joint_targets(raw_ee_pose, fault_spec, q_prev_seed, K=64, iters=5, lambda_reg=0.3):
+    """
+    TERMINAL joint-target conversion for actuation_mode='joint'. Deliberately
+    NOT sharing code with _project_waypoints_impl (the mid-denoising C-step
+    projector) -- kept fully separate per explicit instruction, so a change
+    to one can never silently affect the other. Structurally similar (same
+    per-waypoint warm-started IK loop) but returns the JOINT solution
+    sequence (B, Tp, 7) directly, not an FK-reconstructed EE-pose -- that FK
+    round-trip is exactly what actuation_mode='joint' exists to skip.
+
+    raw_ee_pose: (B, Tp, 9) -- pos(3) + rot6d(6), gripper column NOT included
+                 (caller keeps gripper separate and reattaches it).
+    Returns: q_targets (B, Tp, 7) tensor of joint solutions, one per waypoint,
+             on the SAME device/dtype as raw_ee_pose. Also returns the final
+             waypoint's solution separately for warm-start chaining across
+             predict_action calls (mirrors ProjectWaypoints.last_q_seed).
+    """
+    orig_device = raw_ee_pose.device
+    orig_dtype = raw_ee_pose.dtype
+    dtype = torch.float32
+    cpu = torch.device("cpu")
+
+    raw_cpu = raw_ee_pose.detach().to(cpu, dtype=dtype)
+    B, Tp, _ = raw_cpu.shape
+
+    joint_idx = fault_spec['joint_idx']
+    q_lock_raw = fault_spec['q_lock']
+    if isinstance(q_lock_raw, torch.Tensor):
+        q_lock_per_env = q_lock_raw.detach().to(cpu, dtype=dtype).reshape(B)
+    else:
+        q_lock_per_env = torch.full((B,), float(q_lock_raw), dtype=dtype)
+
+    q_lo = fault_spec['q_lo'].to(cpu, dtype=dtype)
+    q_hi = fault_spec['q_hi'].to(cpu, dtype=dtype)
+    is_locked = fault_spec['fault_type'] == 'locked'
+
+    locked_mask = torch.zeros(7, dtype=torch.bool)
+    locked_mask[joint_idx] = is_locked
+
+    q_seed = q_prev_seed.detach().to(cpu, dtype=dtype).clone()
+    if q_seed.dim() == 1:
+        q_seed = q_seed.unsqueeze(0).expand(B, -1).clone()
+
+    q_targets = torch.zeros(B, Tp, 7, dtype=dtype)
+
+    for k in range(Tp):
+        pos_k = raw_cpu[:, k, 0:3]
+        rot6d_k = raw_cpu[:, k, 3:9]
+        target_rot_k = _rot6d_to_matrix(rot6d_k)
+
+        seeds = torch.rand(B, K, 7, dtype=dtype) * (q_hi - q_lo) + q_lo
+        seeds[:, 0, :] = q_seed
+        if locked_mask.any():
+            seeds[:, :, joint_idx] = q_lock_per_env.unsqueeze(1)
+
+        q_lock_vec_bk = torch.zeros(B, K, 7, dtype=dtype)
+        if locked_mask.any():
+            q_lock_vec_bk[:, :, joint_idx] = q_lock_per_env.unsqueeze(1)
+
+        q_ref_bk = q_seed.unsqueeze(1).expand(B, K, 7).clone()
+
+        N = B * K
+        seeds_flat = seeds.reshape(N, 7)
+        target_pos_flat = pos_k.unsqueeze(1).expand(B, K, 3).reshape(N, 3)
+        target_rot_flat = target_rot_k.unsqueeze(1).expand(B, K, 3, 3).reshape(N, 3, 3)
+        q_lock_vec_flat = q_lock_vec_bk.reshape(N, 7)
+        q_ref_flat = q_ref_bk.reshape(N, 7)
+
+        q_sol_flat, pos_err_flat, rot_err_flat = solve_batch_ik(
+            target_pos_flat, target_rot_flat, seeds_flat, q_lo, q_hi,
+            locked_mask, q_lock_vec_flat, q_ref_flat, iters, lambda_reg=lambda_reg)
+
+        q_sol = q_sol_flat.reshape(B, K, 7)
+        pos_err = pos_err_flat.reshape(B, K)
+        rot_err = rot_err_flat.reshape(B, K)
+
+        converged = (pos_err < 0.01) & (rot_err < 0.15)
+        new_seed = torch.zeros(B, 7, dtype=dtype)
+        for b in range(B):
+            if converged[b].any():
+                cand = q_sol[b][converged[b]]
+                dists = (cand - q_seed[b].unsqueeze(0)).norm(dim=-1)
+                best = cand[dists.argmin()]
+            else:
+                best = q_sol[b][pos_err[b].argmin()]
+            new_seed[b] = best
+        q_seed = new_seed
+        q_targets[:, k, :] = q_seed
+
+    return q_targets.to(orig_device, dtype=orig_dtype), q_seed.to(orig_device, dtype=orig_dtype)

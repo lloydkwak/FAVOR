@@ -18,11 +18,16 @@ from diffusion_policy.common.pytorch_util import dict_apply
 
 
 class FavorHybridImagePolicy:
-    def __init__(self, base_policy, fault_spec=None, projector=None, env_ref=None, blend_floor=0.0):
+    def __init__(self, base_policy, fault_spec=None, projector=None, env_ref=None, blend_floor=0.0,
+                 actuation_mode='osc', joint_q_lo=None, joint_q_hi=None,
+                 joint_output_projector_K=64, joint_output_projector_iters=5,
+                 joint_output_projector_lambda=0.3):
         self.base = base_policy
         self.fault_spec = fault_spec      # static part: joint_idx / fault_type / severity (same for all envs in one runner)
         self.projector = projector        # Phase 4-2+: callable(raw_clean, fault_spec, q_prev_seed) -> raw_corrected
-        self._q_prev_seed = None          # warm-start state across waypoints/steps within an episode
+                                           # (mid-DENOISING C-step correction -- unchanged, still operates on noisy
+                                           # intermediate estimates, EE-pose space, exactly as before)
+        self._q_prev_seed = None          # warm-start state across waypoints/steps within an episode (mid-denoising C-step)
         self.env_ref = env_ref            # AsyncVectorEnv reference -- used to pull PER-ENV q_lock live via RPC,
                                            # since the actual lock value is only known after each env's own
                                            # random reset() and differs across envs (see FaultInjector.get_fault_info)
@@ -34,6 +39,26 @@ class FavorHybridImagePolicy:
                                            # to a "pretend nothing is locked" trajectory shape before FAVOR gets a
                                            # meaningful say. Default 0.0 preserves the original literature-aligned
                                            # schedule exactly (backward compatible).
+
+        # --- actuation_mode: kept STRICTLY separate from everything above. ---
+        # 'osc'   (default) -> predict_action returns the EE-pose action exactly as
+        #          before (bit-identical code path, verified by test_favor_identity.py).
+        # 'joint' -> after the (unchanged) EE-pose trajectory is produced, ONE extra
+        #          terminal IK pass converts it to joint targets for JointActuationWrapper.
+        #          This is a SEPARATE ProjectWaypoints instance/seed chain from
+        #          self.projector (the mid-denoising C-step) -- deliberately decoupled,
+        #          per explicit instruction, so neither can silently affect the other.
+        self.actuation_mode = actuation_mode
+        if actuation_mode == 'joint':
+            assert joint_q_lo is not None and joint_q_hi is not None, \
+                "actuation_mode='joint' requires joint_q_lo/joint_q_hi (needed for the terminal IK pass even when fault_spec is None)"
+            from ik_projector import ProjectWaypoints
+            self._joint_output_projector = ProjectWaypoints(
+                K=joint_output_projector_K, iters=joint_output_projector_iters,
+                lambda_reg=joint_output_projector_lambda)
+            self._joint_q_lo = joint_q_lo
+            self._joint_q_hi = joint_q_hi
+            self._q_prev_seed_joint_output = None   # separate warm-start chain, terminal IK pass only
 
     # -- passthrough attributes used by RobomimicImageRunner's run() loop --
     @property
@@ -56,6 +81,8 @@ class FavorHybridImagePolicy:
         if hasattr(self.base, "reset"):
             self.base.reset()
         self._q_prev_seed = None  # cleared at episode start; projector will seed from zeros on first call
+        if self.actuation_mode == 'joint':
+            self._q_prev_seed_joint_output = None  # separate chain, cleared independently
 
     # -- E-C-I hook --
     def conditional_sample(self, condition_data, condition_mask,
@@ -171,4 +198,51 @@ class FavorHybridImagePolicy:
         start = To - 1
         end = start + base.n_action_steps
         action = action_pred[:, start:end]
-        return {"action": action, "action_pred": action_pred}
+
+        if self.actuation_mode == 'osc':
+            # UNCHANGED path -- identical to before this patch, byte-for-byte.
+            return {"action": action, "action_pred": action_pred}
+
+        # --- actuation_mode == 'joint': terminal IK pass, EE-pose -> joint targets ---
+        # This runs regardless of self.fault_spec (even when None / no fault), because
+        # JointActuationWrapper needs joint targets unconditionally -- there is no OSC
+        # to fall back on. When self.fault_spec is None we pass a fault_type=None spec
+        # (locked_mask stays all-False inside the projector), which reduces this to a
+        # plain unconstrained IK solve -- reusing the exact same, already-verified
+        # projector code, not a new IK path.
+        import torch as _torch
+        B = action.shape[0]
+        if self._q_prev_seed_joint_output is None:
+            if self.env_ref is not None:
+                qpos_list = self.env_ref.call('get_current_qpos')
+                self._q_prev_seed_joint_output = _torch.tensor(
+                    [list(q) for q in qpos_list], dtype=action.dtype, device=action.device)
+            else:
+                self._q_prev_seed_joint_output = _torch.zeros(B, 7, dtype=action.dtype, device=action.device)
+
+        if self.fault_spec is not None:
+            terminal_fault_spec = dict(self.fault_spec)
+            if self.env_ref is not None:
+                infos = self.env_ref.call('get_fault_info')
+                q_locks = [info['q_lock'] if info['q_lock'] is not None else 0.0 for info in infos]
+                terminal_fault_spec['q_lock'] = _torch.tensor(q_locks, dtype=action.dtype, device=action.device)
+        else:
+            terminal_fault_spec = {
+                'joint_idx': 0, 'q_lock': 0.0, 'fault_type': None,
+                'q_lo': self._joint_q_lo, 'q_hi': self._joint_q_hi,
+            }
+        # ensure q_lo/q_hi present even if fault_spec was supplied without them
+        terminal_fault_spec.setdefault('q_lo', self._joint_q_lo)
+        terminal_fault_spec.setdefault('q_hi', self._joint_q_hi)
+
+        # action[..., 0:9] = pos(3)+rot6d(6); action[...,9] = gripper -- kept aside, reattached after IK.
+        from ik_projector import project_waypoints_to_joint_targets
+        gripper_col = action[..., 9:10]
+        q_targets, final_q_seed = project_waypoints_to_joint_targets(
+            action[..., 0:9], terminal_fault_spec, self._q_prev_seed_joint_output,
+            K=self._joint_output_projector.K, iters=self._joint_output_projector.iters,
+            lambda_reg=self._joint_output_projector.lambda_reg)
+        self._q_prev_seed_joint_output = final_q_seed
+
+        joint_action = _torch.cat([q_targets, gripper_col], dim=-1)  # (B, n_action_steps, 8)
+        return {"action": joint_action, "action_pred": action_pred}
