@@ -212,13 +212,21 @@ class FavorHybridImagePolicy:
         # projector code, not a new IK path.
         import torch as _torch
         B = action.shape[0]
-        if self._q_prev_seed_joint_output is None:
-            if self.env_ref is not None:
-                qpos_list = self.env_ref.call('get_current_qpos')
-                self._q_prev_seed_joint_output = _torch.tensor(
-                    [list(q) for q in qpos_list], dtype=action.dtype, device=action.device)
-            else:
-                self._q_prev_seed_joint_output = _torch.zeros(B, 7, dtype=action.dtype, device=action.device)
+        # ALWAYS re-anchor the IK seed to the robot's ACTUAL current joint
+        # config (not just on the first call). Root cause found empirically:
+        # chaining IK's own previous solution across predict_action calls
+        # silently assumes the robot already reached that solution -- but the
+        # low-level joint controller only gets ~8 substeps to catch up, so
+        # the IK chain drifts further and further from where the robot
+        # actually is (confirmed: chain-to-chain jump stayed small, ~0.14-0.23
+        # rad, while actual-robot-to-target gap grew to ~2 rad and never
+        # closed even with the speed budget effectively unlimited).
+        if self.env_ref is not None:
+            qpos_list = self.env_ref.call('get_current_qpos')
+            self._q_prev_seed_joint_output = _torch.tensor(
+                [list(q) for q in qpos_list], dtype=action.dtype, device=action.device)
+        elif self._q_prev_seed_joint_output is None:
+            self._q_prev_seed_joint_output = _torch.zeros(B, 7, dtype=action.dtype, device=action.device)
 
         if self.fault_spec is not None:
             terminal_fault_spec = dict(self.fault_spec)
@@ -245,4 +253,6 @@ class FavorHybridImagePolicy:
         self._q_prev_seed_joint_output = final_q_seed
 
         joint_action = _torch.cat([q_targets, gripper_col], dim=-1)  # (B, n_action_steps, 8)
+        if getattr(self, "_debug_gripper", False):
+            print("[favor_policy debug] raw gripper_col (pre any wrapper):", gripper_col[0].squeeze(-1).detach().cpu().numpy())
         return {"action": joint_action, "action_pred": action_pred}

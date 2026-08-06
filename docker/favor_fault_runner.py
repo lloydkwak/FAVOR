@@ -49,7 +49,7 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             max_steps=400, n_obs_steps=2, n_action_steps=8,
             render_obs_key='agentview_image', fps=10, crf=22,
             past_action=False, abs_action=True, tqdm_interval_sec=5.0,
-            n_envs=None, actuation_mode='osc', joint_output_max=0.05):
+            n_envs=None, actuation_mode='osc', joint_output_max=0.2, joint_damping_ratio=1.0):
         # actuation_mode='osc'  -> unchanged existing behavior (OSC_POSE, EE-pose actions)
         # actuation_mode='joint' -> JOINT_POSITION controller, action = q_target(7)+gripper(1),
         #                           self.abs_action forced False below so run() (inherited,
@@ -82,6 +82,7 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             joint_ctrl_cfg = load_controller_config(default_controller="JOINT_POSITION")
             joint_ctrl_cfg['output_max'] = joint_output_max
             joint_ctrl_cfg['output_min'] = -joint_output_max
+            joint_ctrl_cfg['damping_ratio'] = joint_damping_ratio
             env_meta['env_kwargs']['controller_configs'] = joint_ctrl_cfg
             # abs_action stays True for IK/dataset bookkeeping upstream (e.g. FK/rotation
             # conventions when computing q_target), but run() must NOT call
