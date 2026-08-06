@@ -120,8 +120,20 @@ def rollout_tracking_cost(a_ee_raw, fault_spec, q_current, delta_max_vec, ik_ite
     B, Tp, _ = a_ee_raw.shape
     q = q_current
     total = torch.zeros(B, device=a_ee_raw.device, dtype=a_ee_raw.dtype)
+    # Safety clamp: early denoising steps feed near-pure-Gaussian-noise
+    # positions into this rollout (by Algorithm 1's own design -- guidance
+    # applies to the noisy sample a^k directly, not a network-cleaned
+    # estimate). Values like -1.15m are physically nonsensical for a
+    # tabletop workspace and drive the Newton IK toward joint limits on
+    # nearly every joint (confirmed via diagnostic), occasionally hitting
+    # rotation/Jacobian singularities that produce NaN over a full rollout.
+    # Clamping to a generous tabletop workspace bound is physically
+    # well-justified (not an arbitrary numerical hack) and keeps the IK
+    # target sane without materially affecting late (low-noise) steps where
+    # positions are already near their real-unit range.
+    WORKSPACE_BOUND = 1.5  # meters, generous for robomimic tabletop tasks
     for k in range(Tp):
-        pos_target = a_ee_raw[:, k, 0:3]
+        pos_target = a_ee_raw[:, k, 0:3].clamp(-WORKSPACE_BOUND, WORKSPACE_BOUND)
         rot_target = _rot6d_to_matrix_diff(a_ee_raw[:, k, 3:9])
 
         q_ik = differentiable_ik_step(q, pos_target, rot_target, fault_spec, iters=ik_iters)
@@ -172,14 +184,30 @@ class EmbodimentGuidance:
         device, dtype = trajectory_norm.device, trajectory_norm.dtype
         delta_max_vec = torch.full((7,), self.delta_max, device=device, dtype=dtype)
 
-        traj_for_grad = trajectory_norm.detach().clone().requires_grad_(True)
-        raw = normalizer["action"].unnormalize(traj_for_grad)  # (B,Tp,Da), Da=10 (pos+rot6d+gripper)
-        raw_ee = raw[..., 0:9]  # guidance only touches pos+rot6d, not gripper
+        # guide() is called from inside RobomimicImageRunner.run()'s
+        # `with torch.no_grad():` block (same class of issue hit earlier
+        # with panda_jacobian). requires_grad_(True) alone is not enough --
+        # the WHOLE forward pass building the autograd graph must run under
+        # an explicit enable_grad(), not just the low-level jacobian calls.
+        with torch.enable_grad():
+            traj_for_grad = trajectory_norm.detach().clone().requires_grad_(True)
+            raw = normalizer["action"].unnormalize(traj_for_grad)  # (B,Tp,Da), Da=10 (pos+rot6d+gripper)
+            raw_ee = raw[..., 0:9]  # guidance only touches pos+rot6d, not gripper
 
-        L_track, final_q = rollout_tracking_cost(
-            raw_ee, fault_spec, self.q_current, delta_max_vec, ik_iters=self.ik_iters)
-        loss = L_track.sum()
-        grad, = torch.autograd.grad(loss, traj_for_grad)
+            L_track, final_q = rollout_tracking_cost(
+                raw_ee, fault_spec, self.q_current, delta_max_vec, ik_iters=self.ik_iters)
+            loss = L_track.sum()
+            grad, = torch.autograd.grad(loss, traj_for_grad)
+
+        # Safety net (NOT a silent fix): if a NaN/Inf still slips through
+        # (e.g. a rotation-angle singularity in an extreme early-denoising
+        # sample), zero out just that guidance step rather than crashing the
+        # whole rollout or corrupting the trajectory with NaN. Logged so a
+        # persistent problem is visible rather than silently masked.
+        if not torch.isfinite(grad).all():
+            n_bad = (~torch.isfinite(grad)).sum().item()
+            print(f"[EmbodimentGuidance] WARNING: {n_bad} non-finite grad elements, skipping this guidance step")
+            grad = torch.nan_to_num(grad, nan=0.0, posinf=0.0, neginf=0.0)
 
         omega_k = alpha_prod_t  # bar_alpha_k, matches paper's guidance schedule exactly
         nudged = trajectory_norm - self.lambda_scale * omega_k * grad

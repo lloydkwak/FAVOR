@@ -92,6 +92,17 @@ class FavorHybridImagePolicy:
         self._q_prev_seed = None  # cleared at episode start; projector will seed from zeros on first call
         if self.actuation_mode == 'joint':
             self._q_prev_seed_joint_output = None  # separate chain, cleared independently
+        if self.guidance is not None:
+            # EmbodimentGuidance needs the REAL robot qpos at episode start
+            # (same lesson as _q_prev_seed_joint_output earlier: seeding from
+            # zeros/None is meaningless once anything downstream actually
+            # uses q_current as a physical anchor). Deferred to the first
+            # conditional_sample() call rather than fetched here, since
+            # env_ref.call() requires the env to already be reset -- reset()
+            # on THIS policy object may run before or after the env's own
+            # reset depending on caller order, so we just mark it as
+            # "needs refresh" and let conditional_sample() pull it live.
+            self.guidance.q_current = None
 
     # -- E-C-I hook --
     def conditional_sample(self, condition_data, condition_mask,
@@ -109,6 +120,14 @@ class FavorHybridImagePolicy:
             trajectory[condition_mask] = condition_data[condition_mask]
 
             if self.guidance is not None and self.fault_spec is not None:
+                if self.guidance.q_current is None:
+                    if self.env_ref is not None:
+                        import torch as _torch2
+                        qpos_list = self.env_ref.call('get_current_qpos')
+                        self.guidance.q_current = _torch2.tensor(
+                            [list(q) for q in qpos_list], dtype=trajectory.dtype, device=trajectory.device)
+                    else:
+                        raise RuntimeError("EmbodimentGuidance requires env_ref to fetch live robot qpos")
                 # UMI-on-Air Algorithm 1, line 3 -- applied to the NOISY
                 # sample BEFORE the denoiser call, fully separate from the
                 # post-hoc C-step (self.projector) below, which is untouched
