@@ -86,7 +86,7 @@ def _matrix_to_rot6d(R):
     return torch.cat([R[..., 0, :], R[..., 1, :]], dim=-1)
 
 
-def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters, lambda_reg=0.05):
+def _project_waypoints_impl(raw_clean, fault_spec, q_prev_seed, K, iters, lambda_reg=0.0):
     orig_device = raw_clean.device
     dtype = torch.float32
     cpu = torch.device("cpu")
@@ -189,7 +189,7 @@ def project_waypoints(raw_clean, fault_spec, q_prev_seed, K=64, iters=5, lambda_
 
 
 class ProjectWaypoints:
-    def __init__(self, K=64, iters=5, lambda_reg=0.05):
+    def __init__(self, K=64, iters=5, lambda_reg=0.0):
         self.K = K
         self.iters = iters
         self.lambda_reg = lambda_reg
