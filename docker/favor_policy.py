@@ -21,7 +21,16 @@ class FavorHybridImagePolicy:
     def __init__(self, base_policy, fault_spec=None, projector=None, env_ref=None, blend_floor=0.0,
                  actuation_mode='osc', joint_q_lo=None, joint_q_hi=None,
                  joint_output_projector_K=64, joint_output_projector_iters=5,
-                 joint_output_projector_lambda=0.3):
+                 joint_output_projector_lambda=0.3,
+                 guidance=None):
+        # guidance: None (default, fully unchanged path) or an
+        # EmbodimentGuidance instance (docker/embodiment_guidance.py, kept
+        # fully separate from self.projector / self._joint_output_projector).
+        # When set, conditional_sample() applies guidance to the NOISY
+        # trajectory BEFORE the model() call each denoising step (UMI-on-Air
+        # Algorithm 1, arXiv 2510.02614), instead of (or alongside) the
+        # existing post-hoc C-step projection.
+        self.guidance = guidance
         self.base = base_policy
         self.fault_spec = fault_spec      # static part: joint_idx / fault_type / severity (same for all envs in one runner)
         self.projector = projector        # Phase 4-2+: callable(raw_clean, fault_spec, q_prev_seed) -> raw_corrected
@@ -98,6 +107,16 @@ class FavorHybridImagePolicy:
         scheduler.set_timesteps(base.num_inference_steps)
         for t in scheduler.timesteps:
             trajectory[condition_mask] = condition_data[condition_mask]
+
+            if self.guidance is not None and self.fault_spec is not None:
+                # UMI-on-Air Algorithm 1, line 3 -- applied to the NOISY
+                # sample BEFORE the denoiser call, fully separate from the
+                # post-hoc C-step (self.projector) below, which is untouched
+                # and simply not invoked when self.guidance is set.
+                alpha_prod_t = scheduler.alphas_cumprod[t]
+                trajectory = self.guidance.guide(trajectory, base.normalizer, self.fault_spec, alpha_prod_t)
+                trajectory[condition_mask] = condition_data[condition_mask]
+
             model_output = model(trajectory, t,
                                   local_cond=local_cond, global_cond=global_cond)
             step_out = scheduler.step(model_output, t, trajectory,
