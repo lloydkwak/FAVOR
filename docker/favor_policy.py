@@ -20,8 +20,20 @@ from diffusion_policy.common.pytorch_util import dict_apply
 class FavorHybridImagePolicy:
     def __init__(self, base_policy, fault_spec=None, projector=None, env_ref=None, blend_floor=0.0,
                  actuation_mode='osc', joint_q_lo=None, joint_q_hi=None,
-                 joint_output_projector_K=64, joint_output_projector_iters=5,
-                 joint_output_projector_lambda=0.3,
+                 joint_output_projector_K=64, joint_output_projector_iters=30,
+                 joint_output_projector_lambda=0.0,
+                 # lambda_reg lowered from 0.3 to 0.0: diagnostic confirmed
+                 # regularization toward q_ref (current pose) actively
+                 # PREVENTS convergence when the true IK solution requires a
+                 # substantially different arm configuration (elbow-up vs
+                 # elbow-down etc.) than the current pose -- measured 346.79mm
+                 # residual (0% converged) at lambda_reg=0.3 vs 0.00mm (43.6%
+                 # converged) at lambda_reg=0.0, SAME target/seeds/iters.
+                 # This path already re-anchors q_prev_seed to the live robot
+                 # qpos every predict_action call, so the cross-waypoint
+                 # continuity regularization was solving a problem (drift)
+                 # that re-anchoring already handles, at the cost of actively
+                 # blocking correct solutions.
                  guidance=None):
         # guidance: None (default, fully unchanged path) or an
         # EmbodimentGuidance instance (docker/embodiment_guidance.py, kept
