@@ -156,16 +156,32 @@ class EmbodimentGuidance:
     (q_current) for the tracking-cost rollout, separate from any C-step or
     terminal-IK state elsewhere.
     """
-    def __init__(self, delta_max=0.2, ik_iters=3, lambda_scale=0.1):
+    def __init__(self, delta_max=0.2, ik_iters=3, lambda_scale=0.1, alpha_threshold=0.3):
         # lambda_scale=0.1 calibrated empirically (test_guidance_magnitude_calibration.py):
         # nudge magnitude ~= 5% of typical normalized-trajectory element scale
         # per denoising step -- large enough to have a real effect over ~100
         # steps, far below the runaway magnitude seen at lambda_scale=50
         # (476.9 total |diff| across 40 elements, i.e. mean ~11.9/element,
         # completely overwhelming the trajectory).
+        #
+        # alpha_threshold: below this alpha_bar_t, guide() is skipped
+        # ENTIRELY (not just down-weighted by omega_k=alpha_bar_t). Root
+        # cause found empirically: early (high-noise) denoising steps feed
+        # near-random rot6d values into the differentiable IK rollout's
+        # axis-angle computation, which hits acos-based singularities and
+        # produces non-finite gradients on a large fraction of elements
+        # (confirmed via rollout logging: 40-100% of grad elements non-finite
+        # on many denoising steps, silently absorbed by the finite-check
+        # safety net -- meaning guidance was effectively inactive most of
+        # the time even though omega_k alone should have down-weighted, not
+        # eliminated, its effect). Position targets already have a
+        # workspace clamp; this threshold is the equivalent safeguard for
+        # rotation, applied at a coarser (whole-step-skip) granularity
+        # since a per-element rotation clamp is not as well-defined.
         self.delta_max = delta_max
         self.ik_iters = ik_iters
         self.lambda_scale = lambda_scale
+        self.alpha_threshold = alpha_threshold
         self.q_current = None  # set externally each predict_action call (live robot qpos)
 
     def guide(self, trajectory_norm, normalizer, fault_spec, alpha_prod_t):
@@ -180,6 +196,11 @@ class EmbodimentGuidance:
         """
         if self.q_current is None:
             raise RuntimeError("EmbodimentGuidance.q_current must be set (live robot qpos) before guide() is called")
+        if float(alpha_prod_t) < self.alpha_threshold:
+            # Early, highly-noisy denoising step -- skip entirely rather
+            # than compute a near-meaningless (and singularity-prone)
+            # gradient from a near-random rot6d target. See __init__ note.
+            return trajectory_norm
         B = trajectory_norm.shape[0]
         device, dtype = trajectory_norm.device, trajectory_norm.dtype
         delta_max_vec = torch.full((7,), self.delta_max, device=device, dtype=dtype)
