@@ -144,7 +144,13 @@ class EmbodimentGuidance:
     (q_current) for the tracking-cost rollout, separate from any C-step or
     terminal-IK state elsewhere.
     """
-    def __init__(self, delta_max=0.2, ik_iters=3, lambda_scale=1.0):
+    def __init__(self, delta_max=0.2, ik_iters=3, lambda_scale=0.1):
+        # lambda_scale=0.1 calibrated empirically (test_guidance_magnitude_calibration.py):
+        # nudge magnitude ~= 5% of typical normalized-trajectory element scale
+        # per denoising step -- large enough to have a real effect over ~100
+        # steps, far below the runaway magnitude seen at lambda_scale=50
+        # (476.9 total |diff| across 40 elements, i.e. mean ~11.9/element,
+        # completely overwhelming the trajectory).
         self.delta_max = delta_max
         self.ik_iters = ik_iters
         self.lambda_scale = lambda_scale
