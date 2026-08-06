@@ -25,7 +25,39 @@ import torch
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from panda_kinematics import panda_fk, panda_jacobian
-from ik_projector import rotmat_to_axis_angle  # pure math primitive, already unit-tested
+
+
+def rotmat_to_axis_angle_stable(R, eps=1e-3):
+    """
+    Numerically stable variant of ik_projector.rotmat_to_axis_angle, used
+    ONLY inside this module (embodiment_guidance.py) -- kept as a separate
+    function so the C-step's already-validated rotmat_to_axis_angle is never
+    touched (zero regression risk there).
+
+    Root cause fixed: EmbodimentGuidance feeds NOISY (near-random, especially
+    in early denoising) rotation targets into a differentiable IK+FK rollout.
+    acos'(x) = -1/sqrt(1-x^2) diverges as x -> +-1 (rotation angle -> 0 or
+    pi), and this happens on ~100% of active guidance calls in practice
+    (measured via test_guidance_warning_rate.py) once alpha_threshold alone
+    was tried and found insufficient. Fix: clamp cos_theta into
+    [-1+eps, 1-eps] BEFORE acos, bounding acos' to ~1/sqrt(2*eps) (~22.4 for
+    eps=1e-3) instead of unbounded. This trades a small amount of precision
+    exactly at 0/pi rotations (irrelevant for a soft gradient nudge) for
+    guaranteed-finite gradients everywhere.
+    """
+    cos_theta = ((R[..., 0, 0] + R[..., 1, 1] + R[..., 2, 2]) - 1) / 2
+    cos_theta = torch.clamp(cos_theta, -1.0 + eps, 1.0 - eps)
+    theta = torch.acos(cos_theta)
+    rx = R[..., 2, 1] - R[..., 1, 2]
+    ry = R[..., 0, 2] - R[..., 2, 0]
+    rz = R[..., 1, 0] - R[..., 0, 1]
+    axis = torch.stack([rx, ry, rz], dim=-1)
+    sin_theta = torch.sin(theta)
+    denom = 2 * sin_theta.clamp(min=eps).unsqueeze(-1)  # forward-safe; theta is
+    # itself now bounded away from 0/pi by the cos_theta clamp above, so
+    # sin(theta) is also bounded away from 0 -- this clamp is now a genuine
+    # (not just cosmetic) floor, consistent with the eps used above.
+    return axis / denom * theta.unsqueeze(-1)
 
 
 def _rot6d_to_matrix_diff(rot6):
@@ -72,7 +104,7 @@ def differentiable_ik_step(q, target_pos, target_rot, fault_spec, iters=3, dampi
     for _ in range(iters):
         J, cur_pos, cur_rot = panda_jacobian(q_cur)
         pos_err = target_pos - cur_pos
-        rot_err = rotmat_to_axis_angle(target_rot @ cur_rot.transpose(-1, -2))
+        rot_err = rotmat_to_axis_angle_stable(target_rot @ cur_rot.transpose(-1, -2))
         e = torch.cat([pos_err, rot_err], dim=-1)
 
         J_full = J
@@ -142,7 +174,7 @@ def rollout_tracking_cost(a_ee_raw, fault_spec, q_current, delta_max_vec, ik_ite
 
         fk_pos, fk_rot = panda_fk(q_next)
         pos_sq_err = (fk_pos - pos_target).pow(2).sum(-1)
-        rot_axis_angle = rotmat_to_axis_angle(rot_target @ fk_rot.transpose(-1, -2))
+        rot_axis_angle = rotmat_to_axis_angle_stable(rot_target @ fk_rot.transpose(-1, -2))
         rot_sq_err = rot_axis_angle.pow(2).sum(-1)
 
         total = total + pos_sq_err + rot_sq_err

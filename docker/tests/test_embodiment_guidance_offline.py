@@ -85,3 +85,27 @@ if t1_pass and t2_pass and t3_pass:
     print("EMBODIMENT_GUIDANCE_OFFLINE_VERIFIED")
 else:
     import sys as _s; _s.exit(1)
+
+# --- Test 4 (NEW, post-fix): rotation error near pi -- the exact singularity
+#     that caused 100% of active guidance calls to produce non-finite
+#     gradients (test_guidance_warning_rate.py). ---
+from embodiment_guidance import rotmat_to_axis_angle_stable
+R_identity = torch.eye(3).unsqueeze(0).requires_grad_(True)
+# a rotation matrix representing ~179.9 degrees about the x-axis (deliberately near pi)
+theta_near_pi = torch.tensor(3.14159 - 0.001)
+R_near_pi = torch.stack([
+    torch.stack([torch.tensor(1.0), torch.tensor(0.0), torch.tensor(0.0)]),
+    torch.stack([torch.tensor(0.0), torch.cos(theta_near_pi), -torch.sin(theta_near_pi)]),
+    torch.stack([torch.tensor(0.0), torch.sin(theta_near_pi), torch.cos(theta_near_pi)]),
+]).unsqueeze(0)
+R_near_pi.requires_grad_(True)
+axis_angle = rotmat_to_axis_angle_stable(R_near_pi)
+loss4 = axis_angle.pow(2).sum()
+grad4, = torch.autograd.grad(loss4, R_near_pi)
+print("Test4 (rotation near pi) axis_angle:", axis_angle.detach().numpy(),
+      " grad finite:", torch.isfinite(grad4).all().item(), " grad norm:", grad4.norm().item())
+t4_pass = torch.isfinite(grad4).all().item()
+print("t4_pass", t4_pass)
+if not t4_pass:
+    import sys as _s; _s.exit(1)
+print("ROTATION_SINGULARITY_FIX_VERIFIED")
