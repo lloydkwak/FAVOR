@@ -202,7 +202,7 @@ class ProjectWaypoints:
         return corrected
 
 
-def project_waypoints_to_joint_targets(raw_ee_pose, fault_spec, q_prev_seed, K=64, iters=5, lambda_reg=0.3):
+def project_waypoints_to_joint_targets(raw_ee_pose, fault_spec, q_prev_seed, K=64, iters=5, lambda_reg=0.3, q_ref_anchor=None):
     """
     TERMINAL joint-target conversion for actuation_mode='joint'. Deliberately
     NOT sharing code with _project_waypoints_impl (the mid-denoising C-step
@@ -245,6 +245,13 @@ def project_waypoints_to_joint_targets(raw_ee_pose, fault_spec, q_prev_seed, K=6
     if q_seed.dim() == 1:
         q_seed = q_seed.unsqueeze(0).expand(B, -1).clone()
 
+    if q_ref_anchor is not None:
+        q_ref_fixed = q_ref_anchor.detach().to(cpu, dtype=dtype).clone()
+        if q_ref_fixed.dim() == 1:
+            q_ref_fixed = q_ref_fixed.unsqueeze(0).expand(B, -1).clone()
+    else:
+        q_ref_fixed = None
+
     q_targets = torch.zeros(B, Tp, 7, dtype=dtype)
 
     for k in range(Tp):
@@ -261,7 +268,8 @@ def project_waypoints_to_joint_targets(raw_ee_pose, fault_spec, q_prev_seed, K=6
         if locked_mask.any():
             q_lock_vec_bk[:, :, joint_idx] = q_lock_per_env.unsqueeze(1)
 
-        q_ref_bk = q_seed.unsqueeze(1).expand(B, K, 7).clone()
+        anchor = q_ref_fixed if q_ref_fixed is not None else q_seed
+        q_ref_bk = anchor.unsqueeze(1).expand(B, K, 7).clone()
 
         N = B * K
         seeds_flat = seeds.reshape(N, 7)
