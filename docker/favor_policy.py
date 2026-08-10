@@ -104,6 +104,7 @@ class FavorHybridImagePolicy:
         self._q_prev_seed = None  # cleared at episode start; projector will seed from zeros on first call
         if self.actuation_mode == 'joint':
             self._q_prev_seed_joint_output = None  # separate chain, cleared independently
+            self._q_episode_initial = None  # fixed regularization anchor, mirrors OSC's initial_joints nullspace target; set once on first predict_action call each episode, never updated after
         if self.guidance is not None:
             # EmbodimentGuidance needs the REAL robot qpos at episode start
             # (same lesson as _q_prev_seed_joint_output earlier: seeding from
@@ -278,6 +279,17 @@ class FavorHybridImagePolicy:
         elif self._q_prev_seed_joint_output is None:
             self._q_prev_seed_joint_output = _torch.zeros(B, 7, dtype=action.dtype, device=action.device)
 
+        # Fixed regularization anchor (OSC's initial_joints nullspace-target
+        # equivalent): set ONCE from the actual robot qpos at the first
+        # predict_action call of the episode, then NEVER updated again for
+        # the rest of the episode -- unlike _q_prev_seed_joint_output above,
+        # which is re-anchored to the live qpos every call. This is a
+        # DIFFERENT variable serving a different role: warm-start point
+        # (q_prev_seed, always current) vs regularization target
+        # (q_episode_initial, always the episode's starting posture).
+        if self._q_episode_initial is None:
+            self._q_episode_initial = self._q_prev_seed_joint_output.clone()
+
         if self.fault_spec is not None:
             terminal_fault_spec = dict(self.fault_spec)
             if self.env_ref is not None:
@@ -299,7 +311,8 @@ class FavorHybridImagePolicy:
         q_targets, final_q_seed = project_waypoints_to_joint_targets(
             action[..., 0:9], terminal_fault_spec, self._q_prev_seed_joint_output,
             K=self._joint_output_projector.K, iters=self._joint_output_projector.iters,
-            lambda_reg=self._joint_output_projector.lambda_reg)
+            lambda_reg=self._joint_output_projector.lambda_reg,
+            q_ref_anchor=self._q_episode_initial)
         self._q_prev_seed_joint_output = final_q_seed
 
         joint_action = _torch.cat([q_targets, gripper_col], dim=-1)  # (B, n_action_steps, 8)

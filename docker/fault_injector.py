@@ -66,6 +66,32 @@ class FaultInjector(gym.Wrapper):
         qpos = [sim.data.qpos[sim.model.jnt_qposadr[sim.model.joint_name2id(n)]] for n in joint_names]
         return qpos
 
+    def get_contacts(self):
+        """Public RPC-able getter: returns MuJoCo contact count (ncon) and
+        the names of the two geoms in each active contact, for diagnosing
+        whether the robot is mechanically stuck against something (e.g. a
+        bin wall in PickPlaceCan, which Lift's flat-table arena doesn't
+        have) -- a rigid JOINT_POSITION controller can jam against an
+        obstacle in a way OSC's compliant impedance control would not."""
+        sim = self._sim()
+        ncon = sim.data.ncon
+        contacts = []
+        for i in range(ncon):
+            c = sim.data.contact[i]
+            geom1 = sim.model.geom_id2name(c.geom1) or f"geom{c.geom1}"
+            geom2 = sim.model.geom_id2name(c.geom2) or f"geom{c.geom2}"
+            contacts.append((geom1, geom2))
+        return {'ncon': ncon, 'contacts': contacts}
+
+    def get_geom_names(self, geom_ids):
+        """Debug helper: resolve a list of geom ids (or names already) to
+        their model names, e.g. to identify what 'geom7' refers to."""
+        sim = self._sim()
+        out = {}
+        for i in range(sim.model.ngeom):
+            out[i] = sim.model.geom_id2name(i)
+        return out
+
     def get_fault_info(self):
         """Public RPC-able getter -- called via AsyncVectorEnv.call('get_fault_info')
         from the main process (where the policy lives) at any time, not tied to

@@ -49,7 +49,7 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             max_steps=400, n_obs_steps=2, n_action_steps=8,
             render_obs_key='agentview_image', fps=10, crf=22,
             past_action=False, abs_action=True, tqdm_interval_sec=5.0,
-            n_envs=None, actuation_mode='osc', joint_output_max=0.2, joint_damping_ratio=1.0):
+            n_envs=None, actuation_mode='osc', joint_output_max=0.2, joint_damping_ratio=1.0, joint_kp=50):
         # actuation_mode='osc'  -> unchanged existing behavior (OSC_POSE, EE-pose actions)
         # actuation_mode='joint' -> JOINT_POSITION controller, action = q_target(7)+gripper(1),
         #                           self.abs_action forced False below so run() (inherited,
@@ -83,6 +83,18 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             joint_ctrl_cfg['output_max'] = joint_output_max
             joint_ctrl_cfg['output_min'] = -joint_output_max
             joint_ctrl_cfg['damping_ratio'] = joint_damping_ratio
+            # joint_kp: lowering this (default robosuite value: 50) turns
+            # rigid JOINT_POSITION control into JOINT-SPACE IMPEDANCE
+            # control (compliant under contact) -- literature confirms
+            # this exact distinction matters for contact-rich tasks (VLA
+            # position-control systems "lack consideration of physical
+            # interaction dynamics" under rigid tracking; the standard fix
+            # is torque-level impedance control via lower gains, not a
+            # different controller class). Investigating whether this
+            # resolves the PickPlaceCan bin-wall contact stall found this
+            # session (Lift has no such contact; Can/Square do, being bin
+            # tasks with walls that Lift's flat-table arena lacks).
+            joint_ctrl_cfg['kp'] = joint_kp
             env_meta['env_kwargs']['controller_configs'] = joint_ctrl_cfg
             # abs_action stays True for IK/dataset bookkeeping upstream (e.g. FK/rotation
             # conventions when computing q_target), but run() must NOT call
