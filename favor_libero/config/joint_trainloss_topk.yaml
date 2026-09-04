@@ -1,0 +1,20 @@
+# Training-only checkpoint policy, for runs that use NullEnvRunner.
+#
+# joint_topk.yaml selects on test_mean_score, which only exists when a real
+# env_runner produces rollouts. LIBERO training currently runs with
+# NullEnvRunner (the libero package is not installed in this image, so
+# FaultRobomimicImageRunner cannot construct Libero_Floor_Manipulation), so
+# that key is never logged and topk selection would silently never fire.
+#
+# Selecting on train_loss instead keeps checkpointing meaningful during the
+# training-only phase. It is NOT a substitute for success-rate-based
+# selection: once the evaluation path is wired up, re-run with joint_topk
+# so checkpoints are chosen by actual task success, matching how the
+# robosuite lift/can/square checkpoints were selected.
+topk:
+  monitor_key: train_loss
+  mode: min
+  k: 5
+  format_str: 'epoch={epoch:04d}-train_loss={train_loss:.4f}.ckpt'
+save_last_ckpt: True
+save_last_snapshot: False

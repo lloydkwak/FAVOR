@@ -6,3 +6,17 @@ __pycache__/
 results/
 data/robomimic/
 diffusion_policy/data/
+
+# External benchmark clones -- large upstream repos, not our code.
+# Our own additions to them are mirrored under favor_robotwin/ instead.
+RoboTwin/
+LIBERO/
+
+# Editor/OS noise
+*.swp
+.DS_Store
+
+# Training/eval stdout logs -- dominated by \r progress-bar spam.
+# The information that matters is already in fault_sweep_*.csv.
+logs_*_train.log
+eval_*.log

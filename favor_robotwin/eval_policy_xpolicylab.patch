@@ -1,0 +1,31 @@
+diff --git a/scripts/eval_policy_xpolicylab.py b/scripts/eval_policy_xpolicylab.py
+index 745cc30..21f6547 100644
+--- a/scripts/eval_policy_xpolicylab.py
++++ b/scripts/eval_policy_xpolicylab.py
+@@ -1425,6 +1425,26 @@ def parse_bool(value: Any) -> bool:
+     return bool(value)
+ 
+ 
++# --- FAULT_SWEEP_HOOK: opt-in patch for the B1/E-C-I fault-sweep experiments (2단계-5/6) ---
++# Gated behind an env var so the normal (unmodified) leaderboard-reproducibility eval
++# path (eval.sh with no FAULT_SWEEP_HOOK set) is completely unaffected.
++#
++# APPLIED AT MODULE LEVEL (not inside `if __name__ == "__main__"`) on purpose:
++# main_batch() spawns worker processes via multiprocessing's "spawn" start method,
++# which re-imports this script as an ordinary module in each worker WITHOUT running
++# the __main__ block (that guard exists specifically to prevent that re-run). A hook
++# applied only inside __main__ would never reach the worker process where
++# run_one_batch_episode actually executes. Module-level code re-runs on every import,
++# including inside each spawned worker, so this placement is required for the patch
++# to actually take effect during a real (multi-process) batch eval.
++# See envs/fault_injection/fault_sweep_hook.py for what this actually does.
++import os as _os
++if _os.environ.get("FAULT_SWEEP_HOOK") == "1":
++    from envs.fault_injection.fault_sweep_hook import apply_fault_sweep_hooks
++    apply_fault_sweep_hooks(globals())
++# --- end FAULT_SWEEP_HOOK ---
++
++
+ if __name__ == "__main__":
+     from test_render import Sapien_TEST
+ 
