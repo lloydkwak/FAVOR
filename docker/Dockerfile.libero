@@ -1,0 +1,137 @@
+# FAVOR — LIBERO evaluation image.
+#
+# WHY A SECOND IMAGE INSTEAD OF UPGRADING favor-p0
+# The robodiff env pins robosuite 1.2.0 on mujoco_py 2.0.2.13. LIBERO needs
+# robosuite 1.4.0, which dropped mujoco_py for the official `mujoco` bindings
+# and ships robosuite.macros (absent in 1.2, and the import that fails first).
+# Upgrading in place would silently change the physics backend under the
+# robosuite Lift/Can/Square checkpoints that produced the existing results,
+# so those runs would no longer be reproducible. Keeping favor-p0 untouched
+# preserves them; this image is only for LIBERO.
+#
+# Verified before writing this file: robosuite 1.4 exposes MjSim via
+# robosuite.utils.binding_utils with the same surface fault_injector.py uses
+# (sim.data.qpos, sim.model.jnt_range, joint_name2id, jnt_qposadr), so the
+# fault injector needs no port. JOINT_POSITION also loads unchanged.
+FROM nvidia/cuda:11.6.2-devel-ubuntu20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+# egl rather than osmesa: robosuite 1.4 renders through the mujoco bindings,
+# where EGL is the supported headless path and is markedly faster.
+ENV MUJOCO_GL=egl
+ENV PATH=/opt/conda/bin:$PATH
+
+# cmake is required on top of favor-p0's apt list: robomimic pulls in
+# egl_probe, which compiles a C++ EGL device probe at install time and
+# aborts with "CMake must be installed." without it. favor-p0 never hit
+# this because its mujoco_py path does not build egl_probe.
+# apt-get update is retried: a single flaky fetch of the base `focal`
+# InRelease leaves that repo's index missing while focal-updates/-security
+# still resolve, so apt reports libglfw3/libglew-dev/patchelf as
+# "unable to locate" even though they exist. Retrying is enough; the
+# failure observed was transient (95 kB/s, one mirror timing out).
+RUN for i in 1 2 3 4 5; do apt-get update && break || { echo "apt-get update failed (attempt $i), retrying"; sleep 15; }; done \
+    && apt-get install -y --no-install-recommends \
+    build-essential cmake git wget curl ca-certificates \
+    libosmesa6-dev libgl1-mesa-glx libglfw3 libglew-dev libegl1 patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/miniforge.sh \
+    && bash /tmp/miniforge.sh -b -p /opt/conda \
+    && rm /tmp/miniforge.sh
+
+# Python 3.8 to match LIBERO's own requirements.txt.
+RUN conda create -y -n libero_dp python=3.8 && conda clean -afy
+SHELL ["conda", "run", "--no-capture-output", "-n", "libero_dp", "/bin/bash", "-c"]
+
+# torch first so the CUDA build is settled before anything else pulls a CPU wheel.
+RUN pip install --no-cache-dir torch==1.12.1+cu116 torchvision==0.13.1+cu116 \
+    --extra-index-url https://download.pytorch.org/whl/cu116
+
+# LIBERO's pinned stack (robosuite 1.4.0, robomimic 0.2.0, bddl, ...).
+COPY LIBERO/requirements.txt /tmp/libero_requirements.txt
+RUN pip install --no-cache-dir -r /tmp/libero_requirements.txt
+
+# Upgrade robomimic past LIBERO's 0.2.0 pin. 0.2.0 predates robosuite 1.4
+# and breaks against it in env_robosuite.py: it imports
+# robosuite.utils.mjcf_utils.postprocess_model_xml at module scope, which
+# 1.4 removed outright (no replacement in that module -- only
+# xml_path_completion remains). 0.3.0 fixes exactly this, branching on the
+# robosuite version and calling env.edit_model_xml() for 1.4+, with the
+# import moved inside the function so module load no longer fails.
+#
+# Safe despite LIBERO's pin: LIBERO does not use robomimic.envs at all
+# (verified by grep across its source -- it wraps robosuite directly via
+# libero/libero/envs/env_wrapper.py). We depend on robomimic only through
+# diffusion_policy's RobomimicImageWrapper, which is precisely the path
+# 0.3.0 repairs. 0.3.0 still imports mujoco_py at module scope; that is
+# handled by the stub in libero_env_adapter.py.
+RUN pip install --no-cache-dir robomimic==0.3.0
+
+# diffusion_policy's own dependencies that LIBERO's list does not cover.
+# The repo itself is bind-mounted, not installed, exactly as in favor-p0.
+RUN pip install --no-cache-dir \
+    zarr==2.12.0 numcodecs==0.10.2 dill==0.3.5.1 \
+    hydra-core==1.2.0 einops==0.4.1 numba==0.56.4 \
+    threadpoolctl==3.1.0 scikit-video==1.1.11 \
+    av imagecodecs pygame pymunk shapely \
+    pytorch3d \
+    diffusers==0.11.1 huggingface_hub==0.25.2 \
+    pandas scikit-image==0.19.3
+
+
+# pandas and scikit-image come from an AST scan of every import under
+# diffusion_policy/, which is also how the rest of this list was checked.
+# pandas backs common/json_logger.py, used by the training loop itself.
+# The scan additionally reported adept_envs, mjrl, r3m, tf_agents, pybullet*,
+# dm_control, pyrealsense2, spnav, pynput, rtde_* and mujoco_py as absent:
+# those belong to benchmarks and real-robot drivers this project never
+# touches (kitchen, blockpush, real-world teleop), and mujoco_py is covered
+# by the stub in libero_env_adapter.py, so none are installed here.
+
+# huggingface_hub is pinned alongside diffusers: LIBERO's transformers==4.21.1
+# pulls huggingface_hub unbounded, and recent releases dropped
+# cached_download, which diffusers 0.11.1 imports at module scope
+# ("cannot import name 'cached_download'"). 0.25.2 is the last release that
+# still exports it, and is the same pin RoboTwin's DP install.sh uses with
+# this exact diffusers version.
+#
+# diffusers is pinned to 0.11.1 to match favor-p0's robodiff env exactly.
+# It supplies DDPMScheduler, whose alphas_cumprod / alphas / clip_sample
+# fields the E-C-I sampler reads directly to form its Tweedie x0 estimate
+# and PPR renoise step. A different diffusers release could change those
+# semantics and silently make LIBERO results non-comparable with the
+# robosuite ones, so the version is matched rather than left to resolve.
+
+# NOTE on pytorch3d: robodiff pins 0.7.0 via conda; pip here resolves to
+# 0.3.0, since 0.7.0 has no wheel for this torch/python combination. That
+# gap is inert for our purposes -- pytorch3d is reached only through
+# RotationTransformer, which favor_fault_runner constructs exclusively in
+# the actuation_mode='osc' branch to convert axis-angle to rotation_6d for
+# absolute EE-pose actions. The joint-space path this image exists to run
+# never touches it; it is installed only so the module-level import in
+# favor_fault_runner.py resolves.
+
+# opencv-python (pulled in by LIBERO's requirements, and imported at the top
+# of robosuite/__init__.py) needs glib and a few X libs at runtime. Without
+# them `import cv2` dies with "libgthread-2.0.so.0: cannot open shared object
+# file", which makes robosuite -- and therefore the whole eval path --
+# unimportable. Installed as its own layer, after the expensive conda/torch/
+# pip steps, so fixing it does not invalidate their cache.
+RUN for i in 1 2 3 4 5; do apt-get update && break || { echo "apt-get update failed (attempt $i), retrying"; sleep 15; }; done \
+    && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libsm6 libxext6 libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# robosuite 1.4 warns on every import without a private macro file.
+RUN python /opt/conda/envs/libero_dp/lib/python3.8/site-packages/robosuite/scripts/setup_macros.py || true
+
+RUN python -c "import sys; print('python', sys.version)" > /opt/PINS.txt \
+    && pip freeze >> /opt/PINS.txt
+
+COPY docker/entrypoint.libero.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["bash"]

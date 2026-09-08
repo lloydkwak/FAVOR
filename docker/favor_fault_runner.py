@@ -19,6 +19,11 @@ from diffusion_policy.gym_util.async_vector_env import AsyncVectorEnv
 from diffusion_policy.gym_util.multistep_wrapper import MultiStepWrapper
 from diffusion_policy.gym_util.video_recording_wrapper import VideoRecordingWrapper, VideoRecorder
 from diffusion_policy.model.common.rotation_transformer import RotationTransformer
+# Imported before anything robomimic-backed: this module installs a
+# mujoco_py stub that robomimic 0.2.0's env_robosuite requires at import
+# time but which robosuite 1.4 (this image) does not ship. Harmless under
+# favor-p0, where the real mujoco_py is present and the stub is skipped.
+from libero_env_adapter import prepare_libero_env_meta
 from diffusion_policy.env_runner.robomimic_image_runner import RobomimicImageRunner, create_env
 from diffusion_policy.env.robomimic.robomimic_image_wrapper import RobomimicImageWrapper
 import robomimic.utils.file_utils as FileUtils
@@ -70,6 +75,10 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
         robosuite_fps = 20
         steps_per_render = max(robosuite_fps // fps, 1)
         env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path)
+        # LIBERO datasets record an env_name robosuite does not know and a
+        # bddl path from LIBERO's pre-release layout; both are repaired here
+        # before create_env sees them. No-op for robosuite datasets.
+        env_meta = prepare_libero_env_meta(env_meta)
         env_meta['env_kwargs']['use_object_obs'] = False
 
         rotation_transformer = None
@@ -173,7 +182,24 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             env_seeds.append(seed); env_prefixs.append('test/')
             env_init_fn_dills.append(dill.dumps(init_fn))
 
-        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
+        # shared_memory=True (AsyncVectorEnv's default) requires every
+        # observation space to be a standard gym.Space (Box/Tuple/Dict).
+        # gym 0.22+ enforces this at construction time; robomimic's wrapper
+        # exposes an OrderedDict-based custom space, so construction aborts
+        # with "Using shared_memory=True ... is incompatible with
+        # non-standard Gym observation spaces" under gym 0.25.2 (this
+        # project's LIBERO image). gym 0.21 (favor-p0) never checked this,
+        # so shared_memory stayed on there without incident. Detected from
+        # the live gym version rather than hardcoded, so both images keep
+        # working from the same source: favor-p0 keeps the faster
+        # shared-memory path, the LIBERO image falls back to pickling
+        # observations between worker processes. Slower per step, not a
+        # correctness difference -- it changes nothing about what the
+        # environment computes.
+        import gym as _gym
+        _gym_ver = tuple(int(x) for x in _gym.__version__.split(".")[:2])
+        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn,
+                             shared_memory=(_gym_ver < (0, 22)))
         self.env_meta = env_meta
         self.env = env
         self.env_fns = env_fns

@@ -1,0 +1,37 @@
+# LIBERO-side counterpart to docker-compose.yml. Same bind-mount layout
+# (whole project root at /workspace), different image: robosuite 1.4 +
+# LIBERO, versus favor-p0's robosuite 1.2 + mujoco_py.
+services:
+  libero:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.libero
+    image: favor-libero
+    environment:
+      # Override the image's MUJOCO_GL=egl. EGL needs the NVIDIA container
+      # runtime to expose the `graphics` capability, which it does not by
+      # default (compute,utility only), so eglCreateContext fails with
+      # EGL_BAD_ALLOC. osmesa is software rendering: slower, but it needs no
+      # driver capability and is the backend favor-p0 has already used
+      # successfully for every robosuite result in this project.
+      - MUJOCO_GL=osmesa
+      - PYOPENGL_PLATFORM=osmesa
+    volumes:
+      - ..:/workspace
+      # LIBERO asks "Do you want to specify a custom path for the dataset
+      # folder? (Y/N)" on first import whenever ~/.libero/config.yaml is
+      # missing. Each `docker compose run` starts a fresh container, so that
+      # prompt returned every time and silently blocked any non-interactive
+      # run (a backgrounded training job just hangs there, GPU idle).
+      # Mounting a prepared config makes the check pass immediately.
+      - ./libero_home:/root/.libero
+    shm_size: "8gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true

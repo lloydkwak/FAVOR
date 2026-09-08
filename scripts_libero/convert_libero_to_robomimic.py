@@ -60,10 +60,28 @@ def resize_hwc(frames: np.ndarray, size: int = IMG_SIZE) -> np.ndarray:
     the encoder fail ("Failed to encode image!"), because cv2 cannot treat a
     3xHxW buffer as an image. robomimic's own hdf5 files are HWC for the same
     reason, so matching them is what keeps this converter a drop-in.
+
+    CRITICAL: LIBERO's demo hdf5 files store BOTH camera streams
+    (agentview_rgb and eye_in_hand_rgb) upside down -- confirmed by direct
+    visual inspection of both, not assumed from one. This is an artifact of
+    LIBERO's own data-collection script: MuJoCo's offscreen render buffer
+    has its origin at the bottom-left (OpenGL convention), and LIBERO saves
+    that buffer as-is rather than flipping it the way robosuite 1.4's own
+    env.reset()/env.step() observation path does. A first attempt worked
+    around this by flipping images on the EVALUATION side instead (patching
+    RobomimicImageWrapper.get_observation) to avoid retraining an
+    already-completed checkpoint -- but that meant training ran against an
+    upside-down world while evaluation ran right-side up, an unnecessary
+    permanent asymmetry between two code paths for what is fundamentally a
+    one-time data problem. Flipping here instead means the offline dataset
+    matches the live environment everywhere, once, at the source: no
+    environment-side patch needed, and the fix is visible by inspecting the
+    dataset alone.
     """
     out = np.empty((frames.shape[0], size, size, 3), dtype=np.uint8)
     for t in range(frames.shape[0]):
-        out[t] = cv2.resize(frames[t], (size, size), interpolation=cv2.INTER_AREA)
+        flipped = frames[t][::-1, :, :]
+        out[t] = cv2.resize(flipped, (size, size), interpolation=cv2.INTER_AREA)
     return out
 
 

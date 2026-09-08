@@ -22,3 +22,4 @@ handover_mic,right,fr_joint3,locked,posthoc,0,50,0.0
 handover_mic,right,fr_joint3,locked,eci,0,50,0.0
 handover_mic,right,fr_joint6,locked,b1,21,50,42.0
 handover_mic,right,fr_joint6,locked,posthoc,20,50,40.0
+handover_mic,right,fr_joint6,locked,eci,21,50,42.0
