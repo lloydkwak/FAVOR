@@ -68,6 +68,12 @@ RUN pip install --no-cache-dir -r /tmp/libero_requirements.txt
 # handled by the stub in libero_env_adapter.py.
 RUN pip install --no-cache-dir robomimic==0.3.0
 
+# pytorch_kinematics: FK/Jacobian for the null-space steering design.
+# D1-verified against the live MuJoCo sim to ~1mm using curobo's own
+# franka_panda.urdf (see docker/fault_kinematics.py) -- robosuite's own
+# bullet_data URDF has incorrect joint origins and is NOT used.
+RUN pip install --no-cache-dir pytorch_kinematics
+
 # diffusion_policy's own dependencies that LIBERO's list does not cover.
 # The repo itself is bind-mounted, not installed, exactly as in favor-p0.
 RUN pip install --no-cache-dir \
