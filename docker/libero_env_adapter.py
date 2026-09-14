@@ -134,8 +134,32 @@ def _libero_bddl_root() -> str:
     return root
 
 
+# Explicit overrides for renames a prefix/suffix rule cannot bridge.
+# Discovered per-task, from datasets whose recorded bddl_file_name still
+# points at LIBERO's pre-release ("chiliocosm") naming: the two
+# "pick_the_akita_black_bowl_..." cases dropped "akita_" and gained "up" in
+# the same rename, and the drawer task changed both "layer"->"drawer" and
+# "drawer"->"cabinet" in the same phrase -- a different noun on each side,
+# which no single pattern can bridge. Keyed on the exact recorded filename.
+_BDDL_EXPLICIT_RENAMES = {
+    "pick_the_akita_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate.bddl":
+        "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate.bddl",
+    "pick_the_akita_black_bowl_on_the_stove_and_place_it_on_the_plate.bddl":
+        "pick_up_the_black_bowl_on_the_stove_and_place_it_on_the_plate.bddl",
+    "open_the_middle_layer_of_the_drawer.bddl":
+        "open_the_middle_drawer_of_the_cabinet.bddl",
+}
+
+
 def _repair_bddl_path(recorded_path: str) -> str:
-    """Map a recorded (stale) bddl path onto the installed one."""
+    """Map a recorded (stale) bddl path onto the installed one.
+
+    Tries, in order: an exact match, the explicit rename table above (for
+    renames no pattern bridges), the "pick_the_x" -> "pick_up_the_x"
+    pattern (covers most libero_object tasks), and finally a suffix match
+    so a fourth, unanticipated rename still resolves rather than silently
+    producing a path that does not exist.
+    """
     root = _libero_bddl_root()
     suite = os.path.basename(os.path.dirname(recorded_path))
     stem = os.path.basename(recorded_path)
@@ -149,6 +173,11 @@ def _repair_bddl_path(recorded_path: str) -> str:
     exact = os.path.join(suite_dir, stem)
     if os.path.isfile(exact):
         return exact
+
+    if stem in _BDDL_EXPLICIT_RENAMES:
+        candidate = os.path.join(suite_dir, _BDDL_EXPLICIT_RENAMES[stem])
+        if os.path.isfile(candidate):
+            return candidate
 
     with_up = re.sub(r"^pick_the_", "pick_up_the_", stem)
     candidate = os.path.join(suite_dir, with_up)

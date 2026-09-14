@@ -54,7 +54,7 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             max_steps=400, n_obs_steps=2, n_action_steps=8,
             render_obs_key='agentview_image', fps=10, crf=22,
             past_action=False, abs_action=True, tqdm_interval_sec=5.0,
-            n_envs=None, actuation_mode='osc', joint_output_max=0.2, joint_damping_ratio=1.0, joint_kp=50):
+            n_envs=None, actuation_mode='osc', joint_output_max=0.2, joint_damping_ratio=1.0, joint_kp=150):
         # actuation_mode='osc'  -> unchanged existing behavior (OSC_POSE, EE-pose actions)
         # actuation_mode='joint' -> JOINT_POSITION controller, action = q_target(7)+gripper(1),
         #                           self.abs_action forced False below so run() (inherited,
@@ -92,7 +92,21 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             joint_ctrl_cfg['output_max'] = joint_output_max
             joint_ctrl_cfg['output_min'] = -joint_output_max
             joint_ctrl_cfg['damping_ratio'] = joint_damping_ratio
-            # joint_kp: lowering this (default robosuite value: 50) turns
+            # joint_kp: default changed from robosuite's 50 to 150 for the
+            # LIBERO evaluation path. Isolated tracking test (fixed target,
+            # 60 settling steps, no LIBERO involved) showed kp=50 leaves a
+            # 0.225 rad steady-state error -- OnTheGroundPanda's floor-mounted
+            # base pose does not settle under robosuite's default gain the
+            # way the table-mounted Panda used for lift/can/square does.
+            # kp=150 cut that to 0.0023 rad in isolation, and confirmed
+            # end-to-end: replaying a demo's own joint targets through the
+            # full env+FaultInjector stack went from FAIL (mean_err=0.166,
+            # reward 0.0) at kp=50 to SUCCESS (mean_err=0.094, reward 1.0)
+            # at kp=150. This was the actual cause of a full 1000-epoch
+            # training run showing exactly 0.0 test/mean_score at every
+            # rollout: the policy and data were fine, the controller could
+            # not physically reach the commanded configurations.
+            # Lowering this (from robosuite's original default of 50) turns
             # rigid JOINT_POSITION control into JOINT-SPACE IMPEDANCE
             # control (compliant under contact) -- literature confirms
             # this exact distinction matters for contact-rich tasks (VLA
