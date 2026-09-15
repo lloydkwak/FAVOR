@@ -66,6 +66,21 @@ class FaultInjector(gym.Wrapper):
         qpos = [sim.data.qpos[sim.model.jnt_qposadr[sim.model.joint_name2id(n)]] for n in joint_names]
         return qpos
 
+    def get_base_pose(self):
+        """Public RPC-able getter for the robot base's WORLD pose
+        (position + rotation matrix), needed by NativeJointPolicy's
+        'select'/'select_comp' modes to set PandaKinematics' base
+        transform once per episode (D1-verified: FK matches the live sim
+        to ~1mm only once this transform is applied -- see
+        fault_kinematics.py). Read once per episode in reset(), not
+        cached across episodes, since a future task could randomize the
+        robot's mount pose (these three don't, but nothing here assumes
+        that will always be true)."""
+        sim = self._sim()
+        pos = np.array(sim.data.get_body_xpos("robot0_base"), dtype=np.float32).copy()
+        rot = np.array(sim.data.get_body_xmat("robot0_base"), dtype=np.float32).reshape(3, 3).copy()
+        return pos, rot
+
     def get_contacts(self):
         """Public RPC-able getter: returns MuJoCo contact count (ncon) and
         the names of the two geoms in each active contact, for diagnosing

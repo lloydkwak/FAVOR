@@ -31,8 +31,12 @@ exactly one env.step() call).
 import torch
 import sys
 sys.path.insert(0, '/workspace/diffusion_policy')
+sys.path.insert(0, '/workspace/docker')
 from diffusion_policy.common.pytorch_util import dict_apply
 from joint_eci_projector import eci_conditional_sample, project_fault, normalize_joint_bounds
+from fault_kinematics import PandaKinematics
+from fault_certificate import FeasibilityCertificate
+from nullspace_compensator import NullspaceCompensator, JOINT_NAME_TO_IDX as _NS_JOINT_IDX
 
 PANDA_Q_LO = torch.tensor([-2.8973,-1.7628,-2.8973,-3.0718,-2.8973,-0.0175,-2.8973], dtype=torch.float32)
 PANDA_Q_HI = torch.tensor([ 2.8973, 1.7628, 2.8973,-0.0698, 2.8973, 3.7525, 2.8973], dtype=torch.float32)
@@ -44,7 +48,9 @@ JOINT_NAME_TO_IDX = {f"robot0_joint{i}": i - 1 for i in range(1, 8)}
 class NativeJointPolicy:
     def __init__(self, base_policy, fault_spec=None, mode='eci', base_seed=0,
                  env_ref=None, fault_joint_name=None, fault_type=None, fault_severity=None,
-                 n_resample=1):
+                 n_resample=1, n_select=16, select_beta=0.05,
+                 compensate=False, compensate_task_dims=3, compensate_damping=1e-3,
+                 base_pos=None, base_rot=None):
         """
         fault_spec: static dict (q_lo, q_hi, [v_max, q_anchor], all (7,)) --
                     for the nominal/vacuous tests. Mutually exclusive with
@@ -54,7 +60,7 @@ class NativeJointPolicy:
                     is built dynamically from the environment after each
                     reset(). Used for the real fault sweep.
         """
-        assert mode in ('eci', 'posthoc')
+        assert mode in ('eci', 'posthoc', 'select', 'select_comp')
         self.base = base_policy
         self.static_fault_spec = fault_spec
         self.mode = mode
@@ -71,12 +77,52 @@ class NativeJointPolicy:
         self._dynamic_fault_spec = None  # rebuilt each reset() if env_ref given
         self.n_resample = n_resample
 
+        # 'select' / 'select_comp' config. n_select: candidates per env per
+        # predict_action call (D2 used N=64 for offline diversity checks;
+        # 16 is a runtime-cost compromise for closed-loop rollout -- see
+        # design doc section 9 risk table on the N-vs-cost tradeoff).
+        self.n_select = n_select
+        self.compensate = compensate
+        self._kin = None  # lazily built on first use, and base transform
+        # set once per episode in reset() once env_ref is available (locked
+        # joint's own base pose doesn't change within an episode).
+        self._cert = None
+        self._comp = None
+        self.select_beta = select_beta
+        self.compensate_task_dims = compensate_task_dims
+        self.compensate_damping = compensate_damping
+        self._base_pos = base_pos
+        self._base_rot = base_rot
+
     def reset(self):
         if hasattr(self.base, 'reset'):
             self.base.reset()
         self._episode_idx += 1
         self._call_idx = 0
         self._dynamic_fault_spec = None  # force rebuild on next predict_action
+
+        if self.mode in ('select', 'select_comp'):
+            if self._kin is None:
+                self._kin = PandaKinematics(device=str(self.device))
+                self._cert = FeasibilityCertificate(self._kin, beta=self.select_beta)
+                self._comp = NullspaceCompensator(
+                    self._kin, task_dims=self.compensate_task_dims,
+                    damping=self.compensate_damping)
+            # base pose read once per episode via FaultInjector.get_base_pose()
+            # (added alongside get_current_qpos/get_fault_info's existing
+            # RPC pattern) -- NOT cached across episodes, see that method's
+            # docstring on why.
+            if self._base_pos is not None and self._base_rot is not None:
+                base_pos, base_rot = self._base_pos, self._base_rot
+            else:
+                assert self.env_ref is not None, (
+                    "select/select_comp needs either explicit base_pos/base_rot "
+                    "or env_ref to query them via get_base_pose()")
+                poses = self.env_ref.call('get_base_pose')
+                base_pos, base_rot = poses[0]  # identical across envs (same robot mount)
+            self._kin.set_base_transform(
+                torch.as_tensor(base_pos, dtype=torch.float32, device=self.device),
+                torch.as_tensor(base_rot, dtype=torch.float32, device=self.device))
 
     def _next_generator(self):
         seed = self.base_seed * 1_000_000 + self._episode_idx * 1000 + self._call_idx
@@ -149,6 +195,77 @@ class NativeJointPolicy:
 
         generator = self._next_generator()
         fault_spec = self._get_fault_spec()
+
+        if self.mode in ('select', 'select_comp') and fault_spec is not None:
+            # Draw n_select candidates PER ENV in one batched diffusion
+            # call (expand B -> B*n_select along the batch dim, since the
+            # denoiser has no cross-sample dependence), score each by
+            # epsilon(Q) (fault_certificate.py -- EE discrepancy the fault
+            # would introduce, NOT a joint-space penalty on the faulted
+            # joint itself: see that module's docstring on why the
+            # faulted joint alone is not the right thing to score), and
+            # keep the argmin per env. select_comp additionally applies
+            # NullspaceCompensator to the selected chunk's execution
+            # waypoint, weighted by the SAME n_select batch's own sample
+            # covariance (no extra forward passes needed for that).
+            N = self.n_select
+            cond_data_rep = cond_data.repeat_interleave(N, dim=0)
+            cond_mask_rep = cond_mask.repeat_interleave(N, dim=0)
+            global_cond_rep = global_cond.repeat_interleave(N, dim=0)
+            nsample_all = base.conditional_sample(
+                cond_data_rep, cond_mask_rep, global_cond=global_cond_rep, generator=generator)
+            naction_pred_all = nsample_all[..., :Da]
+            action_pred_all = base.normalizer['action'].unnormalize(naction_pred_all)  # (B*N, T, Da)
+            action_pred_all = action_pred_all.reshape(B, N, T, Da)
+
+            joint_name = self.fault_joint_name
+            j_idx = _NS_JOINT_IDX[joint_name]
+            q_lo_b, q_hi_b = fault_spec['q_lo'][:, j_idx], fault_spec['q_hi'][:, j_idx]  # (B,)
+            v_max_b = fault_spec.get('v_max')
+            q_anchor_b = fault_spec.get('q_anchor')
+
+            action_pred = torch.zeros(B, T, Da, device=self.device, dtype=self.dtype)
+            for b in range(B):
+                Q = action_pred_all[b, :, :, :7]  # (N, T, 7)
+                if self.fault_type == 'locked':
+                    params = {'q_lock': q_lo_b[b]}  # q_lo==q_hi for locked
+                elif self.fault_type == 'range_reduced':
+                    params = {'q_lo': q_lo_b[b], 'q_hi': q_hi_b[b]}
+                elif self.fault_type == 'velocity_limited':
+                    q_prev_b = q_anchor_b[b, j_idx].expand(N, 1).to(Q.device)
+                    q_prev_seq = torch.cat(
+                        [q_prev_b, Q[:, :-1, j_idx]], dim=1) if T > 1 else q_prev_b
+                    params = {'v_max': v_max_b[b, j_idx], 'q_prev': q_prev_seq}
+                else:
+                    raise ValueError(f"unsupported fault_type for select mode: {self.fault_type!r}")
+
+                eps, _ = self._cert.score(Q, self.fault_type, joint_name, params)
+                best = torch.argmin(eps).item()
+                action_pred[b] = action_pred_all[b, best]
+
+                if self.mode == 'select_comp':
+                    exec_step = base.n_obs_steps - 1  # first waypoint that will actually run
+                    q_exec = action_pred[b, exec_step, :7].clone()
+                    if self.fault_type == 'locked':
+                        delta_j = (q_lo_b[b] - q_exec[j_idx]).item()
+                    elif self.fault_type == 'range_reduced':
+                        clamped = torch.clamp(q_exec[j_idx], q_lo_b[b], q_hi_b[b])
+                        delta_j = (clamped - q_exec[j_idx]).item()
+                    else:
+                        # velocity_limited compensation is not yet implemented
+                        # (needs the executed-so-far trajectory, not just
+                        # this waypoint, to know q_prev at run time) --
+                        # falls back to the uncompensated selected sample.
+                        delta_j = 0.0
+                    if delta_j != 0.0:
+                        sigma_b = torch.cov(Q[:, exec_step, :].T) if N > 1 else None
+                        q_comp = self._comp.compensate(q_exec, joint_name, delta_j, sigma=sigma_b)
+                        action_pred[b, exec_step, :7] = q_comp
+
+            start = base.n_obs_steps - 1
+            end = start + base.n_action_steps
+            action = action_pred[:, start:end]
+            return {'action': action, 'action_pred': action_pred}
 
         if fault_spec is None:
             # B1: no projection at all. The environment itself still
