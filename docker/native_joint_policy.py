@@ -60,7 +60,7 @@ class NativeJointPolicy:
                     is built dynamically from the environment after each
                     reset(). Used for the real fault sweep.
         """
-        assert mode in ('eci', 'posthoc', 'select', 'select_comp')
+        assert mode in ('eci', 'posthoc', 'select', 'select_comp', 'random_n')
         self.base = base_policy
         self.static_fault_spec = fault_spec
         self.mode = mode
@@ -93,6 +93,15 @@ class NativeJointPolicy:
         self.compensate_damping = compensate_damping
         self._base_pos = base_pos
         self._base_rot = base_rot
+
+        # random_n: draws n_select candidates like select does, but picks
+        # one uniformly at random instead of scoring with the certificate.
+        # This is the required control for select's result to mean
+        # anything: if select's improvement over B1 is no better than
+        # random_n's, "N samples chosen by epsilon" isn't doing real work
+        # beyond "N samples, pick any" -- the whole point of the certificate
+        # is to beat this, not just to beat single-sample B1.
+        self._random_n_gen = torch.Generator()
 
     def reset(self):
         if hasattr(self.base, 'reset'):
@@ -195,6 +204,44 @@ class NativeJointPolicy:
 
         generator = self._next_generator()
         fault_spec = self._get_fault_spec()
+
+        if self.mode == 'random_n' and fault_spec is not None:
+            # Same N-candidate draw as select, but no certificate scoring:
+            # picks one candidate per env uniformly at random. Seeded
+            # deterministically from (episode, call) exactly like
+            # _next_generator, so repeated runs with the same base_seed
+            # reproduce the same random choice -- required for this to be
+            # a valid paired control against select/B1 under identical
+            # seeds, not just "some random baseline that happens to run".
+            N = self.n_select
+            cond_data_rep = cond_data.repeat_interleave(N, dim=0)
+            cond_mask_rep = cond_mask.repeat_interleave(N, dim=0)
+            global_cond_rep = global_cond.repeat_interleave(N, dim=0)
+            nsample_all = base.conditional_sample(
+                cond_data_rep, cond_mask_rep, global_cond=global_cond_rep, generator=generator)
+            naction_pred_all = nsample_all[..., :Da]
+            action_pred_all = base.normalizer['action'].unnormalize(naction_pred_all)
+            action_pred_all = action_pred_all.reshape(B, N, T, Da)
+
+            # NOTE: self._call_idx was already incremented by the
+            # _next_generator() call above (which supplied `generator` for
+            # the diffusion sampling itself); using it here means this
+            # random-index draw is seeded one step ahead of that call's own
+            # seed, not off it. That's fine for random_n's OWN
+            # reproducibility (still fully deterministic run-to-run), but
+            # it does mean this seed does not equal `generator`'s -- by
+            # design, since a single shared seed would correlate the
+            # diffusion noise and the index draw for no reason. Recorded
+            # here explicitly since it's easy to assume otherwise.
+            rn_seed = self.base_seed * 1_000_000 + self._episode_idx * 1000 + self._call_idx
+            self._random_n_gen.manual_seed(rn_seed)
+            choice = torch.randint(0, N, (B,), generator=self._random_n_gen)
+            action_pred = action_pred_all[torch.arange(B), choice]
+
+            start = base.n_obs_steps - 1
+            end = start + base.n_action_steps
+            action = action_pred[:, start:end]
+            return {'action': action, 'action_pred': action_pred}
 
         if self.mode in ('select', 'select_comp') and fault_spec is not None:
             # Draw n_select candidates PER ENV in one batched diffusion
