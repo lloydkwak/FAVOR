@@ -50,7 +50,7 @@ class NativeJointPolicy:
                  env_ref=None, fault_joint_name=None, fault_type=None, fault_severity=None,
                  n_resample=1, n_select=16, select_beta=0.05,
                  compensate=False, compensate_task_dims=3, compensate_damping=1e-3,
-                 base_pos=None, base_rot=None):
+                 base_pos=None, base_rot=None, chunk_size=8):
         """
         fault_spec: static dict (q_lo, q_hi, [v_max, q_anchor], all (7,)) --
                     for the nominal/vacuous tests. Mutually exclusive with
@@ -93,6 +93,18 @@ class NativeJointPolicy:
         self.compensate_damping = compensate_damping
         self._base_pos = base_pos
         self._base_rot = base_rot
+
+        # chunk_size: N candidates are drawn in sequential chunks of this
+        # size rather than one batch of size B*N, to fit GPU memory without
+        # losing candidates -- N=8 in one shot was found to lose the
+        # achievable minimum epsilon by 1.7-2.2x relative to N=64 (measured
+        # directly, scripts_libero/check_n_vs_min_epsilon.py), and larger
+        # single-shot batches (N=32+) hit CUDA OOM. Chunking costs wall-clock
+        # time (each chunk is a full denoising run) but no accuracy, unlike
+        # fp16 (tried and reverted -- a dtype mismatch surfaced elsewhere in
+        # the pipeline, and half precision's effect on diffusion sampling
+        # quality wasn't verified anyway).
+        self.chunk_size = chunk_size
 
         # random_n: draws n_select candidates like select does, but picks
         # one uniformly at random instead of scoring with the certificate.
@@ -186,6 +198,33 @@ class NativeJointPolicy:
             self._dynamic_fault_spec = self._build_dynamic_fault_spec()
         return self._dynamic_fault_spec
 
+    def _draw_n_candidates_chunked(self, cond_data, cond_mask, global_cond, N):
+        """Draws N candidates per env by running conditional_sample in
+        sequential chunks of self.chunk_size (each chunk still batches
+        B*chunk_size internally), concatenating results along a new
+        candidate dimension. See constructor docstring on chunk_size for
+        why this exists instead of one B*N batch.
+
+        Each chunk gets its own generator, advanced from self._call_idx
+        exactly like _next_generator -- otherwise repeating the same
+        generator across chunks would draw IDENTICAL noise per chunk,
+        silently duplicating candidates instead of adding real diversity.
+        """
+        B = cond_data.shape[0]
+        chunks = []
+        remaining = N
+        while remaining > 0:
+            n_this = min(self.chunk_size, remaining)
+            gen = self._next_generator()
+            cond_data_rep = cond_data.repeat_interleave(n_this, dim=0)
+            cond_mask_rep = cond_mask.repeat_interleave(n_this, dim=0)
+            global_cond_rep = global_cond.repeat_interleave(n_this, dim=0)
+            nsample = self.base.conditional_sample(
+                cond_data_rep, cond_mask_rep, global_cond=global_cond_rep, generator=gen)
+            chunks.append(nsample.reshape(B, n_this, *nsample.shape[1:]))
+            remaining -= n_this
+        return torch.cat(chunks, dim=1)  # (B, N, T, Da)
+
     def predict_action(self, obs_dict):
         base = self.base
         nobs = base.normalizer.normalize(obs_dict)
@@ -214,14 +253,10 @@ class NativeJointPolicy:
             # a valid paired control against select/B1 under identical
             # seeds, not just "some random baseline that happens to run".
             N = self.n_select
-            cond_data_rep = cond_data.repeat_interleave(N, dim=0)
-            cond_mask_rep = cond_mask.repeat_interleave(N, dim=0)
-            global_cond_rep = global_cond.repeat_interleave(N, dim=0)
-            nsample_all = base.conditional_sample(
-                cond_data_rep, cond_mask_rep, global_cond=global_cond_rep, generator=generator)
+            nsample_all = self._draw_n_candidates_chunked(cond_data, cond_mask, global_cond, N)  # (B, N, T, Da)
             naction_pred_all = nsample_all[..., :Da]
-            action_pred_all = base.normalizer['action'].unnormalize(naction_pred_all)
-            action_pred_all = action_pred_all.reshape(B, N, T, Da)
+            action_pred_all = base.normalizer['action'].unnormalize(
+                naction_pred_all.reshape(B * N, T, Da)).reshape(B, N, T, Da)
 
             # NOTE: self._call_idx was already incremented by the
             # _next_generator() call above (which supplied `generator` for
@@ -256,14 +291,10 @@ class NativeJointPolicy:
             # waypoint, weighted by the SAME n_select batch's own sample
             # covariance (no extra forward passes needed for that).
             N = self.n_select
-            cond_data_rep = cond_data.repeat_interleave(N, dim=0)
-            cond_mask_rep = cond_mask.repeat_interleave(N, dim=0)
-            global_cond_rep = global_cond.repeat_interleave(N, dim=0)
-            nsample_all = base.conditional_sample(
-                cond_data_rep, cond_mask_rep, global_cond=global_cond_rep, generator=generator)
+            nsample_all = self._draw_n_candidates_chunked(cond_data, cond_mask, global_cond, N)  # (B, N, T, Da)
             naction_pred_all = nsample_all[..., :Da]
-            action_pred_all = base.normalizer['action'].unnormalize(naction_pred_all)  # (B*N, T, Da)
-            action_pred_all = action_pred_all.reshape(B, N, T, Da)
+            action_pred_all = base.normalizer['action'].unnormalize(
+                naction_pred_all.reshape(B * N, T, Da)).reshape(B, N, T, Da)
 
             joint_name = self.fault_joint_name
             j_idx = _NS_JOINT_IDX[joint_name]
