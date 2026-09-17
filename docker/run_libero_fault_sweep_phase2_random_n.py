@@ -56,10 +56,12 @@ for joint_name in JOINTS:
         )
         log = runner.run(policy)
         score = log.get("test/mean_score")
+        per_episode = {k.replace("test/sim_max_reward_", ""): v
+                       for k, v in log.items() if k.startswith("test/sim_max_reward_")}
         print(f"  {task_name}/{joint_name}/{fault_type}/{severity}/random_n: {score}")
 
         with open(out_path, "w") as f:
-            json.dump({"random_n": score}, f, indent=2)
+            json.dump({"random_n": score, "per_episode": per_episode}, f, indent=2)
         print(f"SAVED: {fname}")
 
 print(f"TASK {task_name} RANDOM_N SWEEP COMPLETE")

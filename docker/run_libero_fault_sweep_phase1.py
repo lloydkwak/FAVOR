@@ -58,10 +58,12 @@ for joint_name in JOINTS:
         policy = NativeJointPolicy(base_policy, base_seed=42, fault_spec=None)
         log = runner.run(policy)
         score = log.get("test/mean_score")
+        per_episode = {k.replace("test/sim_max_reward_", ""): v
+                       for k, v in log.items() if k.startswith("test/sim_max_reward_")}
         print(f"  {task_name}/{joint_name}/{fault_type}/{severity}/b1: {score}")
 
         with open(out_path, "w") as f:
-            json.dump({"b1": score}, f, indent=2)
+            json.dump({"b1": score, "per_episode": per_episode}, f, indent=2)
         print(f"SAVED: {fname}")
 
 print(f"TASK {task_name} SWEEP COMPLETE")
