@@ -1,0 +1,6 @@
+task,joint,n_test,b1_score,select_score,random_n_score,sel_over_b1,b1_over_sel,p_select_vs_b1,sel_over_rn,rn_over_sel,p_select_vs_random_n,significant_vs_b1,significant_vs_random_n
+alphabet_soup,robot0_joint5,50,0.24,0.64,0.34,26,6,0.00054,22,7,0.00813,True,True
+milk,robot0_joint5,50,0.54,0.96,0.66,23,2,2e-05,17,2,0.00073,True,True
+milk,robot0_joint7,50,0.28,0.18,0.2,7,12,0.35928,9,10,1.0,False,False
+bowl_ramekin,robot0_joint6,50,0.08,0.38,0.08,17,2,0.00073,18,3,0.00149,True,True
+bowl_ramekin,robot0_joint7,50,0.4,0.5,0.32,12,7,0.35928,15,6,0.07835,False,False
