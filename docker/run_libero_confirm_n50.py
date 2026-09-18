@@ -33,6 +33,14 @@ CONDITIONS = [
     ("alphabet_soup", "robot0_joint5"),
     ("milk", "robot0_joint5"),
     ("milk", "robot0_joint7"),
+    ("milk", "robot0_joint6"),  # added after the n=20 4-way (B1/ECI/Select/Random-N)
+    # comparison found ECI recovering this condition from 0.00 (B1=Select=Random-N)
+    # to 0.65 -- the single most dramatic result in that comparison, confirmed via
+    # Fisher's exact approximation (p<0.0001) but not yet via a real paired McNemar
+    # test, since ECI was the only one of the four with per-episode logging at the
+    # time. This condition was NOT in the original 5 (it wasn't in select's
+    # n=20 "improved over B1" list, since select never moved it off 0.00) --
+    # included here specifically because ECI, not select, is what found it.
     ("bowl_ramekin", "robot0_joint6"),
     ("bowl_ramekin", "robot0_joint7"),
 ]
@@ -86,6 +94,11 @@ def run_one(task_name, joint_name, mode):
             fault_joint_name=joint_name, fault_type="locked", fault_severity=None,
             n_select=32, chunk_size=8,
         )
+    elif mode == "eci":
+        policy = NativeJointPolicy(
+            base_policy, base_seed=42, mode='eci', env_ref=runner.env,
+            fault_joint_name=joint_name, fault_type="locked", fault_severity=None,
+        )
     else:
         raise ValueError(mode)
 
@@ -101,7 +114,7 @@ def run_one(task_name, joint_name, mode):
 
 
 for task_name, joint_name in CONDITIONS:
-    for mode in ("b1", "select", "random_n"):
+    for mode in ("b1", "select", "random_n", "eci"):
         run_one(task_name, joint_name, mode)
 
 print("CONFIRM N=50 SWEEP COMPLETE")
