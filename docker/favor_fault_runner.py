@@ -127,7 +127,52 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
 
         def make_wrapped(enable_render):
             robomimic_env = create_env(env_meta=env_meta, shape_meta=shape_meta, enable_render=enable_render)
+            # LIBERO site-conditioned samplers (objects placed on fixture regions, e.g. a
+            # bowl on the stove) compute R(new fixture quat) @ sim.data.get_site_xpos() +
+            # new fixture pos. That is only correct while the fixture still sits at its
+            # default pose at sampling time, which LIBERO guarantees via hard_reset=True.
+            # With the soft reset used here the fixture keeps last episode's pose in
+            # sim.model.body_pos, the transform is applied twice, and the object spawns
+            # ~0.4 m away and ~1 m high (made bowl_stove 0%). hard_reset=True fixed the
+            # placement but crashed inside the vectorized eval workers, so instead keep
+            # soft reset and restore fixture root bodies to their compiled-XML default
+            # pose right before each _reset_internal -- the same precondition a hard
+            # reset provides. Scenes without site-conditioned samplers are untouched
+            # (identical to all prior sweeps).
             robomimic_env.env.hard_reset = False
+            _lib = robomimic_env.env
+            _cpi = getattr(_lib, 'conditional_placement_initializer', None)
+            _s = (getattr(_cpi, 'samplers', None) or {}) if _cpi is not None else {}
+            _site_samplers = list(_s.keys()) if hasattr(_s, 'keys') else list(_s)
+            if _site_samplers:
+                _fixture_defaults = []
+                try:
+                    import mujoco as _mj
+                    _pristine = _mj.MjModel.from_xml_string(_lib.model.get_xml())
+                    for _fx in _lib.fixtures_dict.values():
+                        _bid = _mj.mj_name2id(_pristine, _mj.mjtObj.mjOBJ_BODY, _fx.root_body)
+                        _fixture_defaults.append((_fx.root_body, _pristine.body_pos[_bid].copy(), _pristine.body_quat[_bid].copy()))
+                    _src = 'compiled xml'
+                except Exception as _e:
+                    from robosuite.utils.mjcf_utils import string_to_array
+                    _fixture_defaults = []
+                    for _fx in _lib.fixtures_dict.values():
+                        _el = _lib.model.worldbody.find(f".//body[@name='{_fx.root_body}']")
+                        _pos = string_to_array(_el.get('pos', '0 0 0')) if _el is not None else string_to_array('0 0 0')
+                        _quat = string_to_array(_el.get('quat', '1 0 0 0')) if _el is not None else string_to_array('1 0 0 0')
+                        _fixture_defaults.append((_fx.root_body, _pos, _quat))
+                    _src = f'xml attrs (compile failed: {_e!r})'
+                def _reset_internal_fixture_defaults(_orig=_lib._reset_internal, _env=_lib, _defs=_fixture_defaults):
+                    for _root, _pos, _quat in _defs:
+                        _b = _env.sim.model.body_name2id(_root)
+                        _env.sim.model.body_pos[_b] = _pos
+                        _env.sim.model.body_quat[_b] = _quat
+                    return _orig()
+                _lib._reset_internal = _reset_internal_fixture_defaults
+                print(f'[favor_fault_runner] soft reset + fixture-default restore ({_src}): '
+                      f'{[(r, p.round(3).tolist()) for r, p, q in _fixture_defaults]}', flush=True)
+            else:
+                print('[favor_fault_runner] soft reset, no site-conditioned samplers', flush=True)
             inner = robomimic_env
             if actuation_mode == 'joint':
                 inner = JointActuationWrapper(inner, output_max=joint_output_max)
