@@ -78,7 +78,7 @@ def run_one(task_name, joint_name, mode):
         n_train=0, n_test=N_TEST, test_start_seed=TEST_START_SEED, n_envs=5,
         max_steps=400, n_obs_steps=cfg.n_obs_steps, n_action_steps=cfg.n_action_steps,
         render_obs_key="agentview_image", abs_action=True,
-        actuation_mode="joint", joint_kp=150,
+        actuation_mode="joint", joint_kp=TASKS[task_name].get("joint_kp", 150),
     )
     if mode == "b1":
         policy = NativeJointPolicy(base_policy, base_seed=42, fault_spec=None)
