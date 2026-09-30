@@ -34,33 +34,56 @@ Full tables and figures: `paper/tables/`, `paper/figs/` (regenerate with `script
 ## Repository layout
 
 ~~
-docker/                  environment (Dockerfile.libero, compose) + all method and runner code
-  fault_injector.py        locked / range_reduced / velocity_limited faults (MuJoCo)
-  favor_fault_runner.py    LIBERO rollout runner with fault injection and per-episode logging
-  native_joint_policy*.py  policy wrappers: B1, Select, Random-N, E-C-I, B-IK, Priority IK, RG-DDPM, misspecification
-  run_libero_fault_sweep_*.py, run_confirm_n50*.py   sweep runners (one JSON per condition)
-  sweep_grid_libero*.py    task / joint / severity grids and fixed test seeds
-scripts_libero/          data conversion, evaluation, fault-severity design, Layer-1 recoverability analysis
-scripts_paper/           figure and table generation from results/
-paper/figs, paper/tables generated figures (PDF/PNG) and tables (LaTeX/CSV)
-run_*_queue.sh           sweep chains (docker compose, one container per task)
-run_libero_all_tasks.sh  policy training for the LIBERO tasks
+docker/                     environment (Dockerfile.libero, compose) + all method and runner code
+  assets/franka_panda.urdf    Panda kinematics used by every IK-based method (FK matched to the sim to ~1 mm)
+  fault_injector.py           locked / range_reduced / velocity_limited faults (MuJoCo)
+  favor_fault_runner.py       LIBERO rollout runner with fault injection and per-episode logging
+  native_joint_policy*.py     policy wrappers: B1, Select, Random-N, E-C-I, B-IK, Priority IK, RG-DDPM, misspecification
+  run_libero_fault_sweep_*.py sweep runners (one JSON per condition, per-episode success)
+  run_*confirm_n50*.py        n=50 replications
+  sweep_grid_libero*.py       task / joint / severity grids and fixed test seeds
+  tests/                      unit tests (E-C-I projection, Priority IK)
+third_party/                pinned upstream commits + our patch to diffusion_policy (joint-space configs)
+scripts_libero/             LIBERO -> robomimic conversion, evaluation, severity design, Layer-1 analysis
+scripts_paper/              figures and tables from results/
+paper/figs, paper/tables    generated figures (PDF/PNG) and tables (LaTeX/CSV)
+run_main_sweeps.sh          every main-result sweep
+run_x_queue.sh, run_ms_queue.sh, run_n50_queue.sh   RG-DDPM / budget variant, misspecification, n=50
+run_libero_all_tasks.sh     policy training
+~~
+
+## Setup
+
+~~bash
+git clone https://github.com/lloydkwak/FAVOR.git && cd FAVOR
+bash third_party/setup_third_party.sh        # LIBERO @8f1084e, diffusion_policy @20537a5 + favor.patch
+docker compose -f docker/docker-compose.libero.yml build
+~~
+
+Data: download the LIBERO demonstrations with LIBERO's own download script, then convert each task to the
+robomimic layout the joint-space pipeline consumes (absolute joint-position actions):
+
+~~bash
+python scripts_libero/convert_libero_to_robomimic.py --libero-file <LIBERO demo .hdf5> \
+    --out data/robomimic/datasets/libero_<task>/ph/image_abs.hdf5
 ~~
 
 ## Reproduce
 
 ~~bash
-docker compose -f docker/docker-compose.libero.yml build
-./run_libero_all_tasks.sh                                   # train joint-space DPs
-# sweeps (inside the container, from /workspace/diffusion_policy)
-python /workspace/docker/run_libero_fault_sweep_locked.py <task> {b1,eci,select,random_n,ik,ik_pose}
-python /workspace/docker/run_libero_fault_sweep_range.py  <task> <level_idx> {b1,eci,select,random_n,ik,ik_pose}
-python /workspace/docker/run_libero_fault_sweep_prio.py   <task> locked | range <level_idx>
-python /workspace/docker/run_libero_fault_sweep_x.py      rg <task> locked | range <level_idx>
-python /workspace/docker/run_libero_fault_sweep_ms.py     {rs050,rs150,lop010,lom010} <task> locked | range <level_idx>
-python /workspace/docker/run_confirm_n50_prio.py          <task>
-# figures and tables (host)
+./run_libero_all_tasks.sh                     # train joint-space Diffusion Policies (4 tasks)
+./run_main_sweeps.sh                          # all main sweeps -> results/
+./run_x_queue.sh rg locked range:0            # RG-DDPM
+./run_x_queue.sh prio_b015 range:2            # Priority IK + motion budget (appendix)
+./run_ms_queue.sh none rs050:range:0 rs150:range:0 lop010:locked lom010:locked   # misspecified faults
+./run_n50_queue.sh                            # fresh-seed n=50 replication
+# Layer-1 kinematic analysis (writes analysis_out/layer1_v2.csv; part (A) already fixed the B-IK weights)
+docker compose -f docker/docker-compose.libero.yml run --rm -v $PWD/analysis_out:/workspace/analysis_out libero \
+    python /workspace/scripts_libero/ik_select_and_layer1v2.py
+# figures and tables (host; needs numpy + matplotlib)
 python scripts_paper/make_paper_figures.py --results results --out paper
+# unit tests (container)
+docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/docker/tests/test_ik_priority.py
 ~~
 
 Results (`results/`) are not tracked; every number in `paper/` is regenerated from them.

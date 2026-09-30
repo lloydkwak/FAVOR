@@ -143,10 +143,58 @@ def savefig(fig, out, name):
     plt.close(fig)
 
 
+def spearman(x, y):
+    def rank(v):
+        v = np.asarray(v, float); o = np.argsort(v); r = np.empty(len(v)); r[o] = np.arange(len(v))
+        for u in np.unique(v):                      # average ranks for ties
+            m = v == u; r[m] = r[m].mean()
+        return r
+    rx, ry = rank(x), rank(y)
+    return float(np.corrcoef(rx, ry)[0, 1])
+
+
+def layer1(data, path, OUT, report):
+    """Layer-1 kinematic analysis vs. rollouts: does the policy-free EE error predict B1 success,
+    and does the residual after IK predict what post-hoc retargeting can recover?"""
+    if not os.path.exists(path):
+        print(f"  layer1: {path} not found -> skipped"); return
+    rows = list(csv.DictReader(open(path)))
+    x1, y1, x2, y2, lv = [], [], [], [], []
+    for r in rows:
+        j = int(r["joint"][-1]); key = (r["level"], r["task"], j)
+        B, P = data.get(key + ("b1",)), data.get(key + ("prio",))
+        if B is None or P is None:
+            continue
+        x1.append(float(r["override_pos_mm"])); y1.append(B["score"])
+        x2.append(float(r["ik_pos_mm"])); y2.append(P["score"]); lv.append(r["level"])
+    if len(x1) < 10:
+        print("  layer1: too few matched conditions -> skipped"); return
+    rho1, rho2 = spearman(x1, y1), spearman(x2, y2)
+    lvcol = {"mild": "#8FA6CC", "moderate": "#163A78", "severe": "#E39A9E", "locked": "#B4131C"}
+    fig, axs = plt.subplots(1, 2, figsize=(7.0, 2.2))
+    for ax, xs, ys, xl, yl, rho in [(axs[0], x1, y1, "EE error if the fault just overrides the joint [mm]", "B1 success", rho1),
+                                    (axs[1], x2, y2, "EE error left after IK retargeting [mm]", "Priority IK success", rho2)]:
+        for L in LEVELS:
+            idx = [i for i, l in enumerate(lv) if l == L]
+            ax.scatter([max(xs[i], 0.05) for i in idx], [ys[i] for i in idx], s=9, color=lvcol[L], label=L.capitalize(),
+                       edgecolors="none", alpha=0.85)
+        ax.set_xscale("log"); ax.set_xlabel(xl); ax.set_ylabel(yl); ax.set_ylim(-0.03, 1.03)
+        ax.set_title(f"Spearman $\\rho$ = {rho:.2f}  (n={len(xs)})")
+        ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
+    axs[0].legend(frameon=False, fontsize=6, loc="lower left")
+    savefig(fig, OUT, "fig_layer1"); report.append("fig_layer1")
+    write_table(OUT, "tab_layer1", ["Predictor", "Outcome", "n", "Spearman $\\rho$"],
+                [["override EE error", "B1 success", len(x1), f"{rho1:.2f}"],
+                 ["residual EE error after IK", "Priority IK success", len(x2), f"{rho2:.2f}"]],
+                "Policy-free kinematic analysis (Layer 1) vs. closed-loop rollouts.", "tab:layer1")
+    report.append("tab_layer1")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default="results")
     ap.add_argument("--out", default="paper")
+    ap.add_argument("--layer1", default="analysis_out/layer1_v2.csv")
     a = ap.parse_args()
     R, OUT = a.results, a.out
     data = collect(R)
@@ -373,6 +421,7 @@ def main():
                         "Fresh-seed replication (locked, $n{=}50$, seeds 10020--10069).", "tab:n50")
             report.append("tab_n50")
 
+    layer1(data, a.layer1, OUT, report)
     print("wrote:", ", ".join(report))
     print("output dir:", os.path.abspath(OUT))
 

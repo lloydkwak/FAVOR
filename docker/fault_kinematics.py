@@ -23,7 +23,8 @@ import numpy as np
 import torch
 import pytorch_kinematics as pk
 
-CUROBO_PANDA_URDF = (
+_REPO_URDF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "franka_panda.urdf")
+CUROBO_PANDA_URDF = _REPO_URDF if os.path.isfile(_REPO_URDF) else (
     "/workspace/RoboTwin/envs/curobo/src/curobo/content/assets/"
     "robot/franka_description/franka_panda.urdf"
 )

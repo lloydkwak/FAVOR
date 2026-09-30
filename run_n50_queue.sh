@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-cd ~/favor_project
+cd "$(dirname "$0")"
 DC="docker compose -f docker/docker-compose.libero.yml run --rm libero bash -c"
 for t in milk bowl_stove alphabet_soup bowl_ramekin; do
   echo "=== [$(date '+%m-%d %H:%M')] n50 $t ==="

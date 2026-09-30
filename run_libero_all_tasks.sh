@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sequential joint-space DP training for all 5 LIBERO tasks, num_epochs=100
+# Sequential joint-space DP training for all 4 LIBERO tasks, num_epochs=100
 # (matching LIBERO's own official convention -- ~50-100 epochs on 50
 # demos/task -- rather than the 1000 epochs carried over from the
 # robosuite lift/can/square runs, which was needlessly 10-20x that range
@@ -12,7 +12,7 @@
 # config defaults (50/50/50).
 set -uo pipefail
 
-TASKS="libero_alphabet_soup libero_milk libero_bowl_ramekin libero_bowl_stove libero_drawer"
+TASKS="libero_alphabet_soup libero_milk libero_bowl_ramekin libero_bowl_stove"
 
 for task in $TASKS; do
     echo "=== [$(date +%H:%M:%S)] Starting training: ${task} ==="
@@ -30,4 +30,4 @@ for task in $TASKS; do
     echo "=== [$(date +%H:%M:%S)] Finished: ${task} (exit=$?) ==="
 done
 
-echo "=== All 5 LIBERO tasks trained ==="
+echo "=== All 4 LIBERO tasks trained ==="

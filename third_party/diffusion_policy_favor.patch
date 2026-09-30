@@ -1,0 +1,579 @@
+diff --git a/diffusion_policy/config/checkpoint/joint_topk.yaml b/diffusion_policy/config/checkpoint/joint_topk.yaml
+new file mode 100644
+index 0000000..090deff
+--- /dev/null
++++ b/diffusion_policy/config/checkpoint/joint_topk.yaml
+@@ -0,0 +1,10 @@
++# Matches official checkpoint.topk semantics exactly (monitor_key=test_mean_score,
++# mode=max, k=5, official format_str) -- now valid because env_runner produces
++# real test_mean_score via FaultRobomimicImageRunner instead of NullEnvRunner.
++topk:
++  monitor_key: test_mean_score
++  mode: max
++  k: 5
++  format_str: 'epoch={epoch:04d}-test_mean_score={test_mean_score:.3f}.ckpt'
++save_last_ckpt: True
++save_last_snapshot: False
+diff --git a/diffusion_policy/config/checkpoint/joint_trainloss_topk.yaml b/diffusion_policy/config/checkpoint/joint_trainloss_topk.yaml
+new file mode 100644
+index 0000000..6623fef
+--- /dev/null
++++ b/diffusion_policy/config/checkpoint/joint_trainloss_topk.yaml
+@@ -0,0 +1,20 @@
++# Training-only checkpoint policy, for runs that use NullEnvRunner.
++#
++# joint_topk.yaml selects on test_mean_score, which only exists when a real
++# env_runner produces rollouts. LIBERO training currently runs with
++# NullEnvRunner (the libero package is not installed in this image, so
++# FaultRobomimicImageRunner cannot construct Libero_Floor_Manipulation), so
++# that key is never logged and topk selection would silently never fire.
++#
++# Selecting on train_loss instead keeps checkpointing meaningful during the
++# training-only phase. It is NOT a substitute for success-rate-based
++# selection: once the evaluation path is wired up, re-run with joint_topk
++# so checkpoints are chosen by actual task success, matching how the
++# robosuite lift/can/square checkpoints were selected.
++topk:
++  monitor_key: train_loss
++  mode: min
++  k: 5
++  format_str: 'epoch={epoch:04d}-train_loss={train_loss:.4f}.ckpt'
++save_last_ckpt: True
++save_last_snapshot: False
+diff --git a/diffusion_policy/config/task/can_image_joint.yaml b/diffusion_policy/config/task/can_image_joint.yaml
+index a744afd..dbcbca5 100644
+--- a/diffusion_policy/config/task/can_image_joint.yaml
++++ b/diffusion_policy/config/task/can_image_joint.yaml
+@@ -25,11 +25,25 @@ dataset_path: &dataset_path data/robomimic/datasets/${task.task_name}/${task.dat
+ abs_action: &abs_action True  # kept True: env_runner still needs abs_action semantics for actuation_mode='joint' wiring
+ 
+ env_runner:
+-  # NullEnvRunner: official RobomimicImageRunner assumes 10-dim EE-pose
+-  # actions (undo_transform_action would crash on our 8-dim joint actions).
+-  # Real evaluation happens separately, post-training, via
+-  # FaultRobomimicImageRunner(actuation_mode='joint'). See docker/null_env_runner.py.
+-  _target_: null_env_runner.NullEnvRunner
++  # Switched from NullEnvRunner to the real FaultRobomimicImageRunner so
++  # in-training rollouts produce genuine test_mean_score (matching the
++  # official checkpoint.topk.monitor_key). Same pattern validated on Square.
++  _target_: favor_fault_runner.FaultRobomimicImageRunner
++  dataset_path: /workspace/diffusion_policy/data/robomimic/datasets/can/ph/image_abs.hdf5
++  shape_meta: *shape_meta
++  fault_joint_name: robot0_joint1
++  fault_type: null
++  fault_severity: null
++  n_train: 0
++  n_test: 10
++  test_start_seed: 10000
++  n_envs: 10
++  max_steps: 400
++  n_obs_steps: ${n_obs_steps}
++  n_action_steps: ${n_action_steps}
++  render_obs_key: 'agentview_image'
++  abs_action: *abs_action
++  actuation_mode: 'joint'
+ # evaluation at this config requires a 16 core 64GB instance.
+ 
+ dataset:
+diff --git a/diffusion_policy/config/task/libero_alphabet_soup_image_joint.yaml b/diffusion_policy/config/task/libero_alphabet_soup_image_joint.yaml
+new file mode 100644
+index 0000000..34079f2
+--- /dev/null
++++ b/diffusion_policy/config/task/libero_alphabet_soup_image_joint.yaml
+@@ -0,0 +1,65 @@
++name: libero_alphabet_soup_image_joint
++
++shape_meta: &shape_meta
++  # acceptable types: rgb, low_dim
++  obs:
++    agentview_image:
++      shape: [3, 84, 84]
++      type: rgb
++    robot0_eye_in_hand_image:
++      shape: [3, 84, 84]
++      type: rgb
++    robot0_eef_pos:
++      shape: [3]
++      # type default: low_dim
++    robot0_eef_quat:
++      shape: [4]
++    robot0_gripper_qpos:
++      shape: [2]
++  action: 
++    shape: [8]  # joint_pos(7) + gripper(1) -- NOT pos(3)+rot6d(6)+gripper(1)
++
++task_name: &task_name libero_alphabet_soup
++dataset_type: &dataset_type ph
++# Absolute: train.py runs with cwd=/workspace/diffusion_policy, so the
++# original relative path resolved to /workspace/diffusion_policy/data,
++# while the converted LIBERO datasets live at /workspace/data. Matches
++# the absolute path env_runner already uses.
++dataset_path: &dataset_path /workspace/data/robomimic/datasets/${task.task_name}/${task.dataset_type}/image_abs.hdf5
++abs_action: &abs_action True  # kept True: env_runner still needs abs_action semantics for actuation_mode='joint' wiring
++
++env_runner:
++  # Real runner, restored now that the LIBERO evaluation path works
++  # (env registration + bddl path repair via libero_env_adapter). This
++  # produces genuine test_mean_score during training, so checkpoint.topk
++  # can select on task success exactly as the robosuite lift/can/square
++  # checkpoints were selected. fault_type=null keeps in-training rollouts
++  # fault-free; the fault sweep sets it per condition at eval time.
++  _target_: favor_fault_runner.FaultRobomimicImageRunner
++  dataset_path: /workspace/data/robomimic/datasets/libero_alphabet_soup/ph/image_abs.hdf5
++  shape_meta: *shape_meta
++  fault_joint_name: robot0_joint1
++  fault_type: null
++  fault_severity: null
++  n_train: 0
++  n_test: 50
++  test_start_seed: 10000
++  n_envs: 5
++  max_steps: 400
++  n_obs_steps: ${n_obs_steps}
++  n_action_steps: ${n_action_steps}
++  render_obs_key: 'agentview_image'
++  abs_action: *abs_action
++  actuation_mode: 'joint'
++
++dataset:
++  _target_: diffusion_policy.dataset.robomimic_replay_joint_action_dataset.RobomimicReplayJointActionDataset
++  shape_meta: *shape_meta
++  dataset_path: *dataset_path
++  horizon: ${horizon}
++  pad_before: ${eval:'${n_obs_steps}-1+${n_latency_steps}'}
++  pad_after: ${eval:'${n_action_steps}-1'}
++  n_obs_steps: ${dataset_obs_steps}
++  use_cache: True
++  seed: 42
++  val_ratio: 0.02
+diff --git a/diffusion_policy/config/task/libero_bowl_ramekin_image_joint.yaml b/diffusion_policy/config/task/libero_bowl_ramekin_image_joint.yaml
+new file mode 100644
+index 0000000..3e45f23
+--- /dev/null
++++ b/diffusion_policy/config/task/libero_bowl_ramekin_image_joint.yaml
+@@ -0,0 +1,65 @@
++name: libero_bowl_ramekin_image_joint
++
++shape_meta: &shape_meta
++  # acceptable types: rgb, low_dim
++  obs:
++    agentview_image:
++      shape: [3, 84, 84]
++      type: rgb
++    robot0_eye_in_hand_image:
++      shape: [3, 84, 84]
++      type: rgb
++    robot0_eef_pos:
++      shape: [3]
++      # type default: low_dim
++    robot0_eef_quat:
++      shape: [4]
++    robot0_gripper_qpos:
++      shape: [2]
++  action: 
++    shape: [8]  # joint_pos(7) + gripper(1) -- NOT pos(3)+rot6d(6)+gripper(1)
++
++task_name: &task_name libero_bowl_ramekin
++dataset_type: &dataset_type ph
++# Absolute: train.py runs with cwd=/workspace/diffusion_policy, so the
++# original relative path resolved to /workspace/diffusion_policy/data,
++# while the converted LIBERO datasets live at /workspace/data. Matches
++# the absolute path env_runner already uses.
++dataset_path: &dataset_path /workspace/data/robomimic/datasets/${task.task_name}/${task.dataset_type}/image_abs.hdf5
++abs_action: &abs_action True  # kept True: env_runner still needs abs_action semantics for actuation_mode='joint' wiring
++
++env_runner:
++  # Real runner, restored now that the LIBERO evaluation path works
++  # (env registration + bddl path repair via libero_env_adapter). This
++  # produces genuine test_mean_score during training, so checkpoint.topk
++  # can select on task success exactly as the robosuite lift/can/square
++  # checkpoints were selected. fault_type=null keeps in-training rollouts
++  # fault-free; the fault sweep sets it per condition at eval time.
++  _target_: favor_fault_runner.FaultRobomimicImageRunner
++  dataset_path: /workspace/data/robomimic/datasets/libero_bowl_ramekin/ph/image_abs.hdf5
++  shape_meta: *shape_meta
++  fault_joint_name: robot0_joint1
++  fault_type: null
++  fault_severity: null
++  n_train: 0
++  n_test: 50
++  test_start_seed: 10000
++  n_envs: 5
++  max_steps: 400
++  n_obs_steps: ${n_obs_steps}
++  n_action_steps: ${n_action_steps}
++  render_obs_key: 'agentview_image'
++  abs_action: *abs_action
++  actuation_mode: 'joint'
++
++dataset:
++  _target_: diffusion_policy.dataset.robomimic_replay_joint_action_dataset.RobomimicReplayJointActionDataset
++  shape_meta: *shape_meta
++  dataset_path: *dataset_path
++  horizon: ${horizon}
++  pad_before: ${eval:'${n_obs_steps}-1+${n_latency_steps}'}
++  pad_after: ${eval:'${n_action_steps}-1'}
++  n_obs_steps: ${dataset_obs_steps}
++  use_cache: True
++  seed: 42
++  val_ratio: 0.02
+diff --git a/diffusion_policy/config/task/libero_bowl_stove_image_joint.yaml b/diffusion_policy/config/task/libero_bowl_stove_image_joint.yaml
+new file mode 100644
+index 0000000..5ab404f
+--- /dev/null
++++ b/diffusion_policy/config/task/libero_bowl_stove_image_joint.yaml
+@@ -0,0 +1,65 @@
++name: libero_bowl_stove_image_joint
++
++shape_meta: &shape_meta
++  # acceptable types: rgb, low_dim
++  obs:
++    agentview_image:
++      shape: [3, 84, 84]
++      type: rgb
++    robot0_eye_in_hand_image:
++      shape: [3, 84, 84]
++      type: rgb
++    robot0_eef_pos:
++      shape: [3]
++      # type default: low_dim
++    robot0_eef_quat:
++      shape: [4]
++    robot0_gripper_qpos:
++      shape: [2]
++  action: 
++    shape: [8]  # joint_pos(7) + gripper(1) -- NOT pos(3)+rot6d(6)+gripper(1)
++
++task_name: &task_name libero_bowl_stove
++dataset_type: &dataset_type ph
++# Absolute: train.py runs with cwd=/workspace/diffusion_policy, so the
++# original relative path resolved to /workspace/diffusion_policy/data,
++# while the converted LIBERO datasets live at /workspace/data. Matches
++# the absolute path env_runner already uses.
++dataset_path: &dataset_path /workspace/data/robomimic/datasets/${task.task_name}/${task.dataset_type}/image_abs.hdf5
++abs_action: &abs_action True  # kept True: env_runner still needs abs_action semantics for actuation_mode='joint' wiring
++
++env_runner:
++  # Real runner, restored now that the LIBERO evaluation path works
++  # (env registration + bddl path repair via libero_env_adapter). This
++  # produces genuine test_mean_score during training, so checkpoint.topk
++  # can select on task success exactly as the robosuite lift/can/square
++  # checkpoints were selected. fault_type=null keeps in-training rollouts
++  # fault-free; the fault sweep sets it per condition at eval time.
++  _target_: favor_fault_runner.FaultRobomimicImageRunner
++  dataset_path: /workspace/data/robomimic/datasets/libero_bowl_stove/ph/image_abs.hdf5
++  shape_meta: *shape_meta
++  fault_joint_name: robot0_joint1
++  fault_type: null
++  fault_severity: null
++  n_train: 0
++  n_test: 50
++  test_start_seed: 10000
++  n_envs: 5
++  max_steps: 400
++  n_obs_steps: ${n_obs_steps}
++  n_action_steps: ${n_action_steps}
++  render_obs_key: 'agentview_image'
++  abs_action: *abs_action
++  actuation_mode: 'joint'
++
++dataset:
++  _target_: diffusion_policy.dataset.robomimic_replay_joint_action_dataset.RobomimicReplayJointActionDataset
++  shape_meta: *shape_meta
++  dataset_path: *dataset_path
++  horizon: ${horizon}
++  pad_before: ${eval:'${n_obs_steps}-1+${n_latency_steps}'}
++  pad_after: ${eval:'${n_action_steps}-1'}
++  n_obs_steps: ${dataset_obs_steps}
++  use_cache: True
++  seed: 42
++  val_ratio: 0.02
+diff --git a/diffusion_policy/config/task/libero_milk_image_joint.yaml b/diffusion_policy/config/task/libero_milk_image_joint.yaml
+new file mode 100644
+index 0000000..e7bb0df
+--- /dev/null
++++ b/diffusion_policy/config/task/libero_milk_image_joint.yaml
+@@ -0,0 +1,65 @@
++name: libero_milk_image_joint
++
++shape_meta: &shape_meta
++  # acceptable types: rgb, low_dim
++  obs:
++    agentview_image:
++      shape: [3, 84, 84]
++      type: rgb
++    robot0_eye_in_hand_image:
++      shape: [3, 84, 84]
++      type: rgb
++    robot0_eef_pos:
++      shape: [3]
++      # type default: low_dim
++    robot0_eef_quat:
++      shape: [4]
++    robot0_gripper_qpos:
++      shape: [2]
++  action: 
++    shape: [8]  # joint_pos(7) + gripper(1) -- NOT pos(3)+rot6d(6)+gripper(1)
++
++task_name: &task_name libero_milk
++dataset_type: &dataset_type ph
++# Absolute: train.py runs with cwd=/workspace/diffusion_policy, so the
++# original relative path resolved to /workspace/diffusion_policy/data,
++# while the converted LIBERO datasets live at /workspace/data. Matches
++# the absolute path env_runner already uses.
++dataset_path: &dataset_path /workspace/data/robomimic/datasets/${task.task_name}/${task.dataset_type}/image_abs.hdf5
++abs_action: &abs_action True  # kept True: env_runner still needs abs_action semantics for actuation_mode='joint' wiring
++
++env_runner:
++  # Real runner, restored now that the LIBERO evaluation path works
++  # (env registration + bddl path repair via libero_env_adapter). This
++  # produces genuine test_mean_score during training, so checkpoint.topk
++  # can select on task success exactly as the robosuite lift/can/square
++  # checkpoints were selected. fault_type=null keeps in-training rollouts
++  # fault-free; the fault sweep sets it per condition at eval time.
++  _target_: favor_fault_runner.FaultRobomimicImageRunner
++  dataset_path: /workspace/data/robomimic/datasets/libero_milk/ph/image_abs.hdf5
++  shape_meta: *shape_meta
++  fault_joint_name: robot0_joint1
++  fault_type: null
++  fault_severity: null
++  n_train: 0
++  n_test: 50
++  test_start_seed: 10000
++  n_envs: 5
++  max_steps: 400
++  n_obs_steps: ${n_obs_steps}
++  n_action_steps: ${n_action_steps}
++  render_obs_key: 'agentview_image'
++  abs_action: *abs_action
++  actuation_mode: 'joint'
++
++dataset:
++  _target_: diffusion_policy.dataset.robomimic_replay_joint_action_dataset.RobomimicReplayJointActionDataset
++  shape_meta: *shape_meta
++  dataset_path: *dataset_path
++  horizon: ${horizon}
++  pad_before: ${eval:'${n_obs_steps}-1+${n_latency_steps}'}
++  pad_after: ${eval:'${n_action_steps}-1'}
++  n_obs_steps: ${dataset_obs_steps}
++  use_cache: True
++  seed: 42
++  val_ratio: 0.02
+diff --git a/diffusion_policy/config/task/lift_image_joint.yaml b/diffusion_policy/config/task/lift_image_joint.yaml
+index 953471d..a818b32 100644
+--- a/diffusion_policy/config/task/lift_image_joint.yaml
++++ b/diffusion_policy/config/task/lift_image_joint.yaml
+@@ -25,11 +25,25 @@ dataset_path: &dataset_path data/robomimic/datasets/${task.task_name}/${task.dat
+ abs_action: &abs_action True  # kept True: env_runner still needs abs_action semantics for actuation_mode='joint' wiring
+ 
+ env_runner:
+-  # NullEnvRunner: official RobomimicImageRunner assumes 10-dim EE-pose
+-  # actions (undo_transform_action would crash on our 8-dim joint actions).
+-  # Real evaluation happens separately, post-training, via
+-  # FaultRobomimicImageRunner(actuation_mode='joint'). See docker/null_env_runner.py.
+-  _target_: null_env_runner.NullEnvRunner
++  # Switched from NullEnvRunner to the real FaultRobomimicImageRunner so
++  # in-training rollouts produce genuine test_mean_score (matching the
++  # official checkpoint.topk.monitor_key). Same pattern validated on Square.
++  _target_: favor_fault_runner.FaultRobomimicImageRunner
++  dataset_path: /workspace/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5
++  shape_meta: *shape_meta
++  fault_joint_name: robot0_joint1
++  fault_type: null
++  fault_severity: null
++  n_train: 0
++  n_test: 10
++  test_start_seed: 10000
++  n_envs: 10
++  max_steps: 400
++  n_obs_steps: ${n_obs_steps}
++  n_action_steps: ${n_action_steps}
++  render_obs_key: 'agentview_image'
++  abs_action: *abs_action
++  actuation_mode: 'joint'
+ # evaluation at this config requires a 16 core 64GB instance.
+ 
+ dataset:
+diff --git a/diffusion_policy/config/task/square_image_joint.yaml b/diffusion_policy/config/task/square_image_joint.yaml
+index 7c31f82..1382b9b 100644
+--- a/diffusion_policy/config/task/square_image_joint.yaml
++++ b/diffusion_policy/config/task/square_image_joint.yaml
+@@ -25,11 +25,29 @@ dataset_path: &dataset_path data/robomimic/datasets/${task.task_name}/${task.dat
+ abs_action: &abs_action True  # kept True: env_runner still needs abs_action semantics for actuation_mode='joint' wiring
+ 
+ env_runner:
+-  # NullEnvRunner: official RobomimicImageRunner assumes 10-dim EE-pose
+-  # actions (undo_transform_action would crash on our 8-dim joint actions).
+-  # Real evaluation happens separately, post-training, via
+-  # FaultRobomimicImageRunner(actuation_mode='joint'). See docker/null_env_runner.py.
+-  _target_: null_env_runner.NullEnvRunner
++  # Switched from NullEnvRunner to the real FaultRobomimicImageRunner so
++  # in-training rollouts produce genuine test_mean_score (matching the
++  # official checkpoint.topk.monitor_key). fault_type=None -> nominal
++  # (no-fault) evaluation during training, actuation_mode='joint' since
++  # this checkpoint outputs 8-dim joint actions directly (no IK needed).
++  # n_test reduced from the project standard 28 to 10 to keep rollout
++  # overhead reasonable given this runs every rollout_every epochs.
++  _target_: favor_fault_runner.FaultRobomimicImageRunner
++  dataset_path: *dataset_path
++  shape_meta: *shape_meta
++  fault_joint_name: robot0_joint1
++  fault_type: null
++  fault_severity: null
++  n_train: 0
++  n_test: 10
++  test_start_seed: 10000
++  n_envs: 10
++  max_steps: 400
++  n_obs_steps: ${n_obs_steps}
++  n_action_steps: ${n_action_steps}
++  render_obs_key: 'agentview_image'
++  abs_action: *abs_action
++  actuation_mode: 'joint'
+ # evaluation at this config requires a 16 core 64GB instance.
+ 
+ dataset:
+diff --git a/diffusion_policy/dataset/robomimic_replay_joint_action_dataset.py b/diffusion_policy/dataset/robomimic_replay_joint_action_dataset.py
+index 2197527..9e9686e 100644
+--- a/diffusion_policy/dataset/robomimic_replay_joint_action_dataset.py
++++ b/diffusion_policy/dataset/robomimic_replay_joint_action_dataset.py
+@@ -225,7 +225,26 @@ def _convert_robomimic_to_replay_joint(store, shape_meta, dataset_path,
+                 for i in range(len(demos)):
+                     demo = demos[f'demo_{i}']
+                     this_joint.append(demo['obs']['robot0_joint_pos'][:].astype(np.float32))
+-                    this_gripper.append(demo['actions'][:, 6:7].astype(np.float32))
++                    # Gripper is index 7, not 6: this action layout is
++                    # joint_pos(7, indices 0..6) + gripper(1, index 7), as
++                    # produced by both the robosuite lift/can/square joint
++                    # configs and convert_libero_to_robomimic.py. Reading
++                    # index 6 instead duplicated the last joint value into
++                    # the gripper channel -- confirmed directly: the cached
++                    # zarr's action[:,6] and action[:,7] were bitwise
++                    # identical, while the source hdf5's demo_0/actions[:,6]
++                    # (a continuous joint angle) and [:,7] (a clean {-1,+1}
++                    # binary gripper command, verified across all 50 demos)
++                    # were not. The resulting normalizer fit a continuous
++                    # range (roughly [-0.52, 2.00]) onto what should have
++                    # been a binary channel, and a policy trained against
++                    # that never learned to command the gripper at all
++                    # (predicted ~0.75 regardless of context, vs. ground
++                    # truth -1.0) -- the root cause of a fully-trained
++                    # policy (loss ~1e-4, joint predictions matching demos
++                    # to within 0.001 rad) still scoring exactly 0 success
++                    # even when evaluated at the demo's own recorded states.
++                    this_gripper.append(demo['actions'][:, 7:8].astype(np.float32))
+                 this_joint = np.concatenate(this_joint, axis=0)
+                 this_gripper = np.concatenate(this_gripper, axis=0)
+                 this_data = np.concatenate([this_joint, this_gripper], axis=-1)
+diff --git a/diffusion_policy/gym_util/async_vector_env.py b/diffusion_policy/gym_util/async_vector_env.py
+index dfb0f62..43b0cfa 100644
+--- a/diffusion_policy/gym_util/async_vector_env.py
++++ b/diffusion_policy/gym_util/async_vector_env.py
+@@ -33,6 +33,27 @@ from gym.vector.utils import (
+ __all__ = ["AsyncVectorEnv"]
+ 
+ 
++# gym 0.22+ reordered concatenate()'s arguments from (items, out, space) to
++# (space, items, out). This file is vendored against gym 0.21 and calls it
++# in the old order at two call sites below. Version is detected from the
++# live function signature (not a hardcoded gym.__version__ check) so both
++# of this project's images work from the same source: favor-p0 pins
++# gym==0.21 and hits the old-order branch, the LIBERO image pins
++# gym==0.25.2 (LIBERO's own requirement -- downgrading it to 0.21 inside
++# that image was attempted and abandoned: gym 0.21's setup.py fails
++# egg_info/wheel metadata parsing against every combination of current
++# pip/setuptools/wheel tried, all for a version-specifier typo in its own
++# opencv-python requirement string) and hits the new-order branch.
++import inspect as _inspect
++_CONCATENATE_SPACE_FIRST = list(_inspect.signature(concatenate).parameters)[0] == "space"
++
++
++def _concatenate_compat(items, out, space):
++    if _CONCATENATE_SPACE_FIRST:
++        return concatenate(space, items, out)
++    return concatenate(items, out, space)
++
++
+ class AsyncState(Enum):
+     DEFAULT = "default"
+     WAITING_RESET = "reset"
+@@ -186,7 +207,25 @@ class AsyncVectorEnv(VectorEnv):
+         _, successes = zip(*[pipe.recv() for pipe in self.parent_pipes])
+         self._raise_if_errors(successes)
+ 
+-    def reset_async(self):
++    def reset_async(self, seed=None, return_info=False, options=None):
++        """
++        seed / return_info / options are accepted and ignored.
++
++        Vendored against gym 0.21, whose VectorEnv.reset() called
++        reset_async() with no arguments. gym 0.22+ (this project's LIBERO
++        image pins 0.25.2) changed VectorEnv.reset() to keyword-only
++        `(self, *, seed=None, return_info=False, options=None)` and forwards
++        all three down through reset_async/reset_wait, which otherwise
++        raises "reset_async() got an unexpected keyword argument 'seed'" the
++        first time a rollout starts.
++
++        Ignored deliberately, not just accepted: FaultRobomimicImageRunner
++        seeds each environment itself, through the dilled init_fn it
++        installs on every worker before a rollout (env.seed(seed) per
++        worker), so no seeding information is meant to travel through
++        reset() on this code path. return_info is never requested by the
++        runner, and options is unused by these environments.
++        """
+         self._assert_is_running()
+         if self._state != AsyncState.DEFAULT:
+             raise AlreadyPendingCallError(
+@@ -199,7 +238,9 @@ class AsyncVectorEnv(VectorEnv):
+             pipe.send(("reset", None))
+         self._state = AsyncState.WAITING_RESET
+ 
+-    def reset_wait(self, timeout=None):
++    def reset_wait(self, timeout=None, seed=None, return_info=False, options=None):
++        # Same gym 0.22+ signature change as reset_async above; ignored for
++        # the same reason (see that docstring).
+         """
+         Parameters
+         ----------
+@@ -230,7 +271,7 @@ class AsyncVectorEnv(VectorEnv):
+         self._state = AsyncState.DEFAULT
+ 
+         if not self.shared_memory:
+-            self.observations = concatenate(
++            self.observations = _concatenate_compat(
+                 results, self.observations, self.single_observation_space
+             )
+ 
+@@ -293,7 +334,7 @@ class AsyncVectorEnv(VectorEnv):
+         observations_list, rewards, dones, infos = zip(*results)
+ 
+         if not self.shared_memory:
+-            self.observations = concatenate(
++            self.observations = _concatenate_compat(
+                 observations_list, self.observations, self.single_observation_space
+             )
+ 
+diff --git a/train.py b/train.py
+index 51c564e..067ec9f 100644
+--- a/train.py
++++ b/train.py
+@@ -9,6 +9,19 @@ import sys
+ sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
+ sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
+ 
++# Compatibility shims for the LIBERO image, applied before hydra
++# instantiates anything. That image runs robosuite 1.4 + robomimic 0.3.0,
++# where two things this repo was written against have moved: mujoco_py is
++# gone (robomimic still imports it at module scope) and CropRandomizer
++# lives in robomimic.models.obs_core rather than models.base_nets. Both are
++# patched by importing libero_env_adapter; it is a no-op under favor-p0,
++# where the original robomimic 0.2.0 layout is intact, and absent entirely
++# when /workspace/docker is not on the path.
++try:
++    import libero_env_adapter  # noqa: F401
++except ImportError:
++    pass
++
+ import hydra
+ from omegaconf import OmegaConf
+ import pathlib

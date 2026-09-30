@@ -1,0 +1,14 @@
+\begin{table}[t]
+\centering
+\caption{Policy-free kinematic analysis (Layer 1) vs. closed-loop rollouts.}
+\label{tab:layer1}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lccc}
+\toprule
+Predictor & Outcome & n & Spearman $\rho$ \\
+\midrule
+override EE error & B1 success & 112 & -0.75 \\
+residual EE error after IK & Priority IK success & 112 & -0.66 \\
+\bottomrule
+\end{tabular}
+\end{table}

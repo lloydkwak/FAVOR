@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # usage: ./run_ms_queue.sh <wait_tmux_session|none> <tag:spec> ...   spec = locked | range:<lvl>
 set -uo pipefail
-cd ~/favor_project
+cd "$(dirname "$0")"
 W=$1; shift
 if [ "$W" != "none" ]; then
   echo "waiting for tmux session '$W' to finish ..."
   while tmux has-session -t "$W" 2>/dev/null; do sleep 300; done
 fi
-DC="docker compose -f docker/docker-compose.libero.yml run --rm -v $HOME/favor_project/analysis_out:/workspace/analysis_out libero bash -c"
+DC="docker compose -f docker/docker-compose.libero.yml run --rm -v $PWD/analysis_out:/workspace/analysis_out libero bash -c"
 for item in "$@"; do
   tag=${item%%:*}; a=$(echo ${item#*:} | tr ':' ' ')
   for t in alphabet_soup milk bowl_ramekin bowl_stove; do

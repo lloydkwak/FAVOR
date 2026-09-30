@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # usage: ./run_x_queue.sh <method> <spec...>   spec = "locked" or "range:<lvl>"
 set -uo pipefail
-cd ~/favor_project
+cd "$(dirname "$0")"
 M=$1; shift
-DC="docker compose -f docker/docker-compose.libero.yml run --rm -v $HOME/favor_project/analysis_out:/workspace/analysis_out libero bash -c"
+DC="docker compose -f docker/docker-compose.libero.yml run --rm -v $PWD/analysis_out:/workspace/analysis_out libero bash -c"
 for spec in "$@"; do
   for t in alphabet_soup milk bowl_ramekin bowl_stove; do
     a=$(echo $spec | tr ':' ' ')
