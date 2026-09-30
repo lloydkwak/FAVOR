@@ -139,7 +139,8 @@ def write_table(out, name, header, rows, caption, label, colspec=None):
 def savefig(fig, out, name):
     os.makedirs(os.path.join(out, "figs"), exist_ok=True)
     for ext in ("pdf", "png"):
-        fig.savefig(os.path.join(out, "figs", f"{name}.{ext}"), bbox_inches="tight", dpi=300)
+        meta = {"CreationDate": None} if ext == "pdf" else {}
+        fig.savefig(os.path.join(out, "figs", f"{name}.{ext}"), bbox_inches="tight", dpi=300, metadata=meta)
     plt.close(fig)
 
 
