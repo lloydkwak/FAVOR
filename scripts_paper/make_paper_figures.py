@@ -44,8 +44,8 @@ MS = {  # robustness to misspecified fault knowledge (Priority IK)
     "lop010": ("lock +0.1 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop010"),
     "lom010": ("lock $-$0.1 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lom010"),
 }
-N50_METHODS = ["b1", "eci", "ik", "ik_pose", "prio"]
-N50_LABEL = {"b1": "B1", "eci": "E-C-I", "ik": "B-IK pos", "ik_pose": "B-IK pose", "prio": "Priority IK"}
+N50_METHODS = ["b1", "ik", "ik_pose", "prio"]
+N50_LABEL = {"b1": "B1", "ik": "B-IK pos", "ik_pose": "B-IK pose", "prio": "Priority IK"}
 
 plt.rcParams.update({"font.size": 8, "axes.titlesize": 9, "axes.labelsize": 8, "legend.fontsize": 7,
                      "xtick.labelsize": 7, "ytick.labelsize": 7, "pdf.fonttype": 42, "ps.fonttype": 42,
@@ -286,7 +286,9 @@ def main():
                     P, B = data.get((level, t, j, "prio")), best_of(data, level, t, j)
                     if P and B:
                         M[ti, j - 1] = P["score"] - B["score"]
-            im = ax.imshow(M, cmap="RdBu_r", vmin=-0.6, vmax=0.6, aspect="auto")
+            im = ax.pcolormesh(np.arange(8) - 0.5, np.arange(len(TASKS) + 1) - 0.5, np.ma.masked_invalid(M),
+                               cmap="RdBu_r", vmin=-0.6, vmax=0.6, edgecolors="white", linewidth=0.4)
+            ax.set_xlim(-0.5, 6.5); ax.set_ylim(len(TASKS) - 0.5, -0.5)
             ax.set_title(level.capitalize()); ax.set_xticks(range(7)); ax.set_xticklabels([f"J{j}" for j in JOINTS])
             ax.set_yticks(range(len(TASKS))); ax.set_yticklabels([TASK_LABEL[t] for t in TASKS])
             for (r, c), v in np.ndenumerate(M):
@@ -326,7 +328,9 @@ def main():
                 n += 1; ms_s.append(Q["score"]); ex_s.append(P["score"])
                 if Q["pe"] and P["pe"]:
                     bb, cc = paired(Q["pe"], P["pe"]); b += bb; c += cc
-        if n:
+        if n and n < 20:
+            print(f"  misspec {tag}: {n}/20 conditions done -> skipped until complete")
+        if n == 20:
             rrows.append([lab, level, n, f"{np.mean(ex_s):.2f}", f"{np.mean(ms_s):.2f}",
                           f"{np.mean(ms_s) - np.mean(ex_s):+.2f}", f"{b}:{c} ({fmt_p(mcnemar(b, c))})"])
             bars.append((f"{lab}\n({n} cond.)", np.mean(ex_s), np.mean(ms_s)))
@@ -351,6 +355,8 @@ def main():
         nrows = []
         for t, j in conds:
             rec = {m: load(os.path.join(d50, f"{t}_robot0_joint{j}_locked_{m}_n50.json")) for m in N50_METHODS}
+            if any(rec[m] is None for m in ["b1", "ik", "ik_pose", "prio"]):
+                continue
             row = [f"{TASK_LABEL.get(t, t)} J{j}"]
             for m in N50_METHODS:
                 row.append(f"{rec[m]['score']:.2f}" if rec[m] else "--")
