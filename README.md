@@ -68,6 +68,15 @@ python scripts_libero/convert_libero_to_robomimic.py --libero-file <LIBERO demo 
     --out data/robomimic/datasets/libero_<task>/ph/image_abs.hdf5
 ~~
 
+| Task (this repo) | LIBERO task definition (suite / bddl) | demos |
+|---|---|---|
+| `libero_alphabet_soup` | `libero_object/pick_the_alphabet_soup_and_place_it_in_the_basket.bddl` | 50 |
+| `libero_milk` | `libero_object/pick_the_milk_and_place_it_in_the_basket.bddl` | 50 |
+| `libero_bowl_ramekin` | `libero_spatial/pick_the_akita_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate.bddl` | 50 |
+| `libero_bowl_stove` | `libero_spatial/pick_the_akita_black_bowl_on_the_stove_and_place_it_on_the_plate.bddl` | 50 |
+
+The matching LIBERO demo file is `<suite>/<task>_demo.hdf5` (same name as the bddl file). `drawer` was also converted and trained but is excluded from all reported results.
+
 ## Reproduce
 
 ~~bash
