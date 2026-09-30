@@ -244,9 +244,11 @@ def main():
     for i, m in enumerate(order):
         xs, ys, es = [], [], []
         for li, level in enumerate(LEVELS):
-            if (level, m) in means:
+            if (level, m) in means and means[(level, m)][2] == 28:
                 mu, ci, n = means[(level, m)]
                 xs.append(li + (i - (len(order) - 1) / 2) * W); ys.append(mu); es.append(ci)
+        if not xs:
+            continue
         ax.bar(xs, ys, W * 0.95, yerr=es, color=COLOR[m], label=METHODS[m][0], error_kw=dict(lw=0.6, capsize=1.2),
                edgecolor="black" if m == "prio" else "none", linewidth=0.5)
     ax.set_xticks(range(len(LEVELS))); ax.set_xticklabels(["Mild", "Moderate", "Severe", "Locked"])
@@ -264,6 +266,10 @@ def main():
               for j in JOINTS]
         ax.bar(np.arange(7) + (i - (len(jm) - 1) / 2) * W, ys, W * 0.95, color=COLOR[m], label=METHODS[m][0],
                edgecolor="black" if m == "prio" else "none", linewidth=0.5)
+    for j in JOINTS:
+        allv = [data[("locked", t, j, m)]["score"] for m in jm for t in TASKS if ("locked", t, j, m) in data]
+        if allv and max(allv) < 0.15:
+            ax.text(j - 1, 0.03, "all\n≈0", ha="center", va="bottom", fontsize=5.5, color="#777777")
     ax.set_xticks(range(7)); ax.set_xticklabels([f"J{j}" for j in JOINTS])
     ax.set_ylabel("Success rate (locked)"); ax.set_ylim(0, 1)
     ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
@@ -295,6 +301,8 @@ def main():
     fig, ax = plt.subplots(figsize=(3.5, 2.1))
     for m in [x for x in ["b1", "eci", "rg", "pos", "pose", "prio"] if x in have]:
         ys = [means[(lv, m)][0] if (lv, m) in means and means[(lv, m)][2] == 28 else np.nan for lv in LEVELS]
+        if all(np.isnan(ys)):
+            continue
         ax.plot(range(4), ys, marker="o", ms=3, lw=1.6 if m == "prio" else 1.0, color=COLOR[m], label=METHODS[m][0])
     if all((lv, "best") in means for lv in LEVELS):
         ax.plot(range(4), [means[(lv, "best")][0] for lv in LEVELS], ls="--", lw=0.9, color=COLOR["best"],
@@ -302,7 +310,7 @@ def main():
     ax.set_xticks(range(4)); ax.set_xticklabels(["Mild", "Moderate", "Severe", "Locked"])
     ax.set_ylabel("Mean success rate"); ax.set_ylim(0, 0.9)
     ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
-    ax.legend(frameon=False, ncol=2, loc="upper right", fontsize=6)
+    ax.legend(frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.18), fontsize=6)
     savefig(fig, OUT, "fig_severity_curves"); report.append("fig_severity_curves")
 
     # Table 3 / Fig 5: misspecified fault knowledge
@@ -321,7 +329,7 @@ def main():
         if n:
             rrows.append([lab, level, n, f"{np.mean(ex_s):.2f}", f"{np.mean(ms_s):.2f}",
                           f"{np.mean(ms_s) - np.mean(ex_s):+.2f}", f"{b}:{c} ({fmt_p(mcnemar(b, c))})"])
-            bars.append((lab, np.mean(ex_s), np.mean(ms_s)))
+            bars.append((f"{lab}\n({n} cond.)", np.mean(ex_s), np.mean(ms_s)))
     if rrows:
         write_table(OUT, "tab_misspec",
                     ["Misspecification", "Level", "Cond.", "Exact", "Misspec.", "$\\Delta$", "paired (misspec:exact)"],
