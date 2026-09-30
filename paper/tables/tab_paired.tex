@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{Episode-level paired comparison of Priority IK against each method (same seeds). Each cell: episodes won only by Priority IK : episodes won only by the other method (exact McNemar $p$). Bold: Priority IK significantly better ($p<0.05$).}
+\label{tab:paired}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lcccccc}
+\toprule
+Fault level & vs B1 & vs E-C-I & vs RG-DDPM & vs B-IK pos & vs B-IK pose & vs Oracle$^\dagger$ \\
+\midrule
+mild & 75:52 (0.050) & 81:80 (1.00) & -- & 30:59 (0.003) & 50:50 (1.00) & 23:64 ($1.3\times10^{-5}$) \\
+moderate & \textbf{156:32 ($8.8\times10^{-21}$)} & \textbf{161:49 ($4.0\times10^{-15}$)} & -- & \textbf{80:49 (0.008)} & \textbf{107:29 ($1.1\times10^{-11}$)} & 49:52 (0.84) \\
+severe & \textbf{192:24 ($9.9\times10^{-34}$)} & \textbf{190:43 ($3.1\times10^{-23}$)} & -- & \textbf{115:44 ($1.7\times10^{-8}$)} & \textbf{131:27 ($1.4\times10^{-17}$)} & 70:49 (0.066) \\
+locked & \textbf{223:14 ($1.3\times10^{-49}$)} & \textbf{193:30 ($2.4\times10^{-30}$)} & \textbf{44:25 (0.029)} & \textbf{148:47 ($2.3\times10^{-13}$)} & \textbf{120:31 ($1.5\times10^{-13}$)} & \textbf{89:60 (0.021)} \\
+all & \textbf{646:122 ($6.4\times10^{-87}$)} & \textbf{625:202 ($5.0\times10^{-51}$)} & \textbf{44:25 (0.029)} & \textbf{373:199 ($3.1\times10^{-13}$)} & \textbf{408:137 ($2.9\times10^{-32}$)} & 231:225 (0.81) \\
+\bottomrule
+\end{tabular}
+\end{table}

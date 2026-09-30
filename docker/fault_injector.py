@@ -126,18 +126,28 @@ class FaultInjector(gym.Wrapper):
         return obs
 
     def reset(self, **kwargs):
+        # range_reduced narrows sim.model.jnt_range. That is MODEL state and it
+        # survives the soft reset (hard_reset=False) the eval runner uses, so
+        # each episode used to size its window from the previous episode's
+        # already-narrowed range (width ~ nominal * severity**k, i.e. effectively
+        # locked from each worker's 2nd episode on). Restore the nominal range
+        # before the underlying reset and always size the window from it.
+        if self.fault_type == 'range_reduced' and self._orig_jnt_range is not None:
+            _sim = self._sim()
+            _sim.model.jnt_range[self._qpos_addr(_sim)[2]] = self._orig_jnt_range
         obs = self.env.reset(**kwargs)
         if self.fault_type is not None:
             sim = self._sim()
             qposadr, dofadr, jid = self._qpos_addr(sim)
             self._q_onset = sim.data.qpos[qposadr]
             if self.fault_type == 'range_reduced':
-                lo, hi = sim.model.jnt_range[jid]
+                if self._orig_jnt_range is None:
+                    self._orig_jnt_range = np.array(sim.model.jnt_range[jid], dtype=np.float64)
+                lo, hi = self._orig_jnt_range
                 s = hi - lo
                 half = 0.5 * s * self.severity
                 new_lo = np.clip(self._q_onset - half, lo, hi)
                 new_hi = np.clip(self._q_onset + half, lo, hi)
-                self._orig_jnt_range = (lo, hi)
                 sim.model.jnt_range[jid] = [new_lo, new_hi]
                 sim.forward()
         return self._inject_fault_info(obs)

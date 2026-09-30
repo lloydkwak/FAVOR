@@ -28,6 +28,7 @@ TASKS = {
     "alphabet_soup": "/workspace/data/robomimic/datasets/libero_alphabet_soup/ph/image_abs.hdf5",
     "milk": "/workspace/data/robomimic/datasets/libero_milk/ph/image_abs.hdf5",
     "bowl_ramekin": "/workspace/data/robomimic/datasets/libero_bowl_ramekin/ph/image_abs.hdf5",
+    "bowl_stove": "/workspace/data/robomimic/datasets/libero_bowl_stove/ph/image_abs.hdf5",
 }
 OUT_DIR = "/workspace/results/layer1_optimal_recovery"
 os.makedirs(OUT_DIR, exist_ok=True)

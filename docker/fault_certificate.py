@@ -47,7 +47,7 @@ def apply_fault(q, joint_idx, fault_type, q_lock=None, q_lo=None, q_hi=None,
     if fault_type == "locked":
         out[..., joint_idx] = q_lock
     elif fault_type == "range_reduced":
-        out[..., joint_idx] = torch.clamp(q[..., joint_idx], q_lo, q_hi)
+        out[..., joint_idx] = torch.clamp(q[..., joint_idx], torch.as_tensor(q_lo, device=q.device, dtype=q.dtype), torch.as_tensor(q_hi, device=q.device, dtype=q.dtype))
     elif fault_type == "velocity_limited":
         delta = torch.clamp(q[..., joint_idx] - q_prev, -v_max, v_max)
         out[..., joint_idx] = q_prev + delta

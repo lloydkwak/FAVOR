@@ -43,6 +43,7 @@ CONDITIONS = [
     # included here specifically because ECI, not select, is what found it.
     ("bowl_ramekin", "robot0_joint6"),
     ("bowl_ramekin", "robot0_joint7"),
+    ("bowl_stove", "robot0_joint5"),  # bowl_stove fixture-placement bug fixed this session (favor_fault_runner.py soft-reset patch); n=20 screening: B1=0.65 -> ECI=0.90, Select=0.85, Random-N=0.80
 ]
 N_TEST = 50
 OUT_DIR = "/workspace/results/libero_confirm_n50"

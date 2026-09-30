@@ -36,6 +36,7 @@ from diffusion_policy.common.pytorch_util import dict_apply
 from joint_eci_projector import eci_conditional_sample, project_fault, normalize_joint_bounds
 from fault_kinematics import PandaKinematics
 from fault_certificate import FeasibilityCertificate
+from ik_redistribution import ik_redistribute
 from nullspace_compensator import NullspaceCompensator, JOINT_NAME_TO_IDX as _NS_JOINT_IDX
 
 PANDA_Q_LO = torch.tensor([-2.8973,-1.7628,-2.8973,-3.0718,-2.8973,-0.0175,-2.8973], dtype=torch.float32)
@@ -50,7 +51,8 @@ class NativeJointPolicy:
                  env_ref=None, fault_joint_name=None, fault_type=None, fault_severity=None,
                  n_resample=1, n_select=16, select_beta=0.05,
                  compensate=False, compensate_task_dims=3, compensate_damping=1e-3,
-                 base_pos=None, base_rot=None, chunk_size=8):
+                 base_pos=None, base_rot=None, chunk_size=8,
+                 ik_overrides=None):
         """
         fault_spec: static dict (q_lo, q_hi, [v_max, q_anchor], all (7,)) --
                     for the nominal/vacuous tests. Mutually exclusive with
@@ -60,7 +62,9 @@ class NativeJointPolicy:
                     is built dynamically from the environment after each
                     reset(). Used for the real fault sweep.
         """
-        assert mode in ('eci', 'posthoc', 'select', 'select_comp', 'random_n')
+        assert mode in ('eci', 'posthoc', 'select', 'select_comp', 'random_n', 'ik')
+        if mode == 'ik':
+            assert fault_type in (None, 'locked', 'range_reduced'), fault_type
         self.base = base_policy
         self.static_fault_spec = fault_spec
         self.mode = mode
@@ -115,6 +119,10 @@ class NativeJointPolicy:
         # is to beat this, not just to beat single-sample B1.
         self._random_n_gen = torch.Generator()
 
+        # 'ik' (B-IK baseline): see ik_redistribution.py
+        self.ik_overrides = dict(ik_overrides or {})  # empty -> ik_redistribution module defaults
+        self.ik_log = []
+
     def reset(self):
         if hasattr(self.base, 'reset'):
             self.base.reset()
@@ -122,7 +130,7 @@ class NativeJointPolicy:
         self._call_idx = 0
         self._dynamic_fault_spec = None  # force rebuild on next predict_action
 
-        if self.mode in ('select', 'select_comp'):
+        if self.mode in ('select', 'select_comp', 'ik'):
             if self._kin is None:
                 self._kin = PandaKinematics(device=str(self.device))
                 self._cert = FeasibilityCertificate(self._kin, beta=self.select_beta)
@@ -375,6 +383,38 @@ class NativeJointPolicy:
             action_pred[..., :7] = project_fault(
                 action_pred[..., :7], fault_spec['q_lo'], fault_spec['q_hi'],
                 v_max=fault_spec.get('v_max'), q_anchor=fault_spec.get('q_anchor'))
+
+        if fault_spec is not None and self.mode == 'ik':
+            # B-IK: same sample as B1 (this branch sampled exactly like B1
+            # above), then keep the intended EE pose (FK of the targets), fix
+            # the faulted joint to its admissible value and re-solve the 6
+            # healthy joints by damped least-squares IK. Only the waypoints
+            # that will be executed are touched; already-admissible ones stay
+            # bit-identical to B1.
+            action_pred = action_pred.clone()
+            s0 = base.n_obs_steps - 1
+            s1 = s0 + base.n_action_steps
+            j = JOINT_NAME_TO_IDX[self.fault_joint_name]
+            q_exec = action_pred[:, s0:s1, :7]
+            K = q_exec.shape[1]
+            lo_j = fault_spec['q_lo'][:, j].to(q_exec.device, q_exec.dtype).view(B, 1).expand(B, K)
+            hi_j = fault_spec['q_hi'][:, j].to(q_exec.device, q_exec.dtype).view(B, 1).expand(B, K)
+            q_con = torch.max(torch.min(q_exec[..., j], hi_j), lo_j)
+            need = ((q_con - q_exec[..., j]).abs() > 1e-6).reshape(-1)
+            if need.any():
+                flat = q_exec.reshape(B * K, 7).clone()
+                idx = need.nonzero().squeeze(-1)
+                q_new, info = ik_redistribute(
+                    self._kin, flat[idx], j, q_con.reshape(-1)[idx], **self.ik_overrides)
+                flat[idx] = q_new.to(flat.dtype)
+                action_pred[:, s0:s1, :7] = flat.reshape(B, K, 7)
+                self.ik_log.append({
+                    'n': int(idx.numel()),
+                    'pos_before': info['pos_err_before'].mean().item(),
+                    'pos_after': info['pos_err_after'].mean().item(),
+                    'rot_before': info['rot_err_before'].mean().item(),
+                    'rot_after': info['rot_err_after'].mean().item(),
+                    'dq': info['dq_free'].mean().item()})
 
         start = base.n_obs_steps - 1
         end = start + base.n_action_steps
