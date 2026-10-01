@@ -43,6 +43,9 @@ MS = {  # robustness to misspecified fault knowledge (Priority IK)
     "rs150":  ("window $\\times$1.5",  "range", "moderate", "libero_fault_sweep_range_ms_rs150"),
     "lop010": ("lock +0.1 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop010"),
     "lom010": ("lock $-$0.1 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lom010"),
+    "lop005": ("lock +0.05 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop005"),
+    "lop002": ("lock +0.02 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop002"),
+    "lop001": ("lock +0.01 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop001"),
 }
 N50_METHODS = ["b1", "ik", "ik_pose", "prio"]
 N50_LABEL = {"b1": "B1", "ik": "B-IK pos", "ik_pose": "B-IK pose", "prio": "Priority IK"}
@@ -395,6 +398,34 @@ def main():
         ax.set_xticks(x); ax.set_xticklabels([b[0] for b in bars]); ax.set_ylim(0, 1); ax.set_ylabel("Success rate")
         ax.legend(frameon=False, ncol=2); ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
         savefig(fig, OUT, "fig_misspec"); report.append("tab_misspec, fig_misspec")
+
+    # Fig 6: sensitivity to the lock-angle error (Priority IK, joints 1,3,5,6,7, locked)
+    J5 = [1, 3, 5, 6, 7]
+    def mean_over(dirname, key):
+        v = []
+        for t in TASKS:
+            for j in J5:
+                r = load(os.path.join(R, dirname, fname("locked", t, j))) if dirname else data.get(("locked", t, j, key))
+                if r is None or r["score"] is None:
+                    return None
+                v.append(r["score"])
+        return float(np.mean(v))
+    pts = [(0.0, mean_over(None, "prio"))]
+    for off, tag in [(0.01, "lop001"), (0.02, "lop002"), (0.05, "lop005"), (0.10, "lop010")]:
+        m = mean_over(MS[tag][3], None)
+        if m is not None:
+            pts.append((off, m))
+    b1 = mean_over(None, "b1")
+    if len(pts) >= 3 and pts[0][1] is not None and b1 is not None:
+        fig, ax = plt.subplots(figsize=(3.5, 1.9))
+        ax.plot([p[0] for p in pts], [p[1] for p in pts], marker="o", ms=3.5, lw=1.6, color=COLOR["prio"], label="Priority IK")
+        ax.axhline(b1, ls="--", lw=0.9, color=COLOR["b1"], label="B1 (no intervention)")
+        ax.set_xlabel("error in the assumed lock angle [rad]"); ax.set_ylabel("Success rate (locked)")
+        ax.set_ylim(0, 1); ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
+        ax.legend(frameon=False, fontsize=6)
+        savefig(fig, OUT, "fig_lock_angle_sensitivity"); report.append("fig_lock_angle_sensitivity")
+    else:
+        print("  lock-angle sensitivity: need >=3 points -> skipped")
 
     # Table 4: n=50 fresh-seed replication
     d50 = os.path.join(R, "libero_confirm_n50_fresh")

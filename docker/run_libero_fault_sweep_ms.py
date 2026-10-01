@@ -17,10 +17,12 @@ from native_joint_policy_ms import MisspecPrioPolicy, summarize_ms_log
 
 TAGS = {"rs050": ("range_scale", 0.5), "rs150": ("range_scale", 1.5),
         "lop010": ("lock_offset", 0.1), "lom010": ("lock_offset", -0.1),
+        "lop000": ("lock_offset", 0.0), "lop002": ("lock_offset", 0.02), "lop005": ("lock_offset", 0.05),
         "wj": ("wrong_joint", None), "online": ("online", None), "online2": ("online", None), "online3": ("online", None), "online4": ("online", None), "delay1": ("delay", 1)}
 DET_KW = {"online2": {"det_tau": 0.02, "det_rel": 3.0, "det_k": 2},
           "online3": {"det_mode": "stuck", "det_k": 1},
           "online4": {"det_mode": "stuck", "det_k": 1, "det_margin": 0.0}}
+TAGS["lop001"] = ("lock_offset", 0.01)
 USE_JOINTS = {f"robot0_joint{i}" for i in [int(x) for x in os.environ.get("MS_JOINTS", "1,3,5,6,7").split(",")]}
 tag, task_name, fault = sys.argv[1], sys.argv[2], sys.argv[3]
 assert tag in TAGS, tag
