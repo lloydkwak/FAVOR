@@ -38,15 +38,17 @@ SHORT = {"b1": "B1", "random_n": "Rand-N", "select": "Select", "eci": "E-C-I", "
          "pos": "B-IK pos", "pose": "B-IK pose", "prio": "\\textbf{Prio-IK}"}
 COLOR = {"b1": "#9E9C9C", "random_n": "#CFCFCF", "select": "#B8C4D9", "eci": "#163A78", "rg": "#5B7DB8",
          "pos": "#E39A9E", "pose": "#F2C4C6", "prio": "#B4131C", "best": "#5A5A5A"}
-MS = {  # robustness to misspecified fault knowledge (Priority IK)
+MS = {  # robustness to misspecified fault knowledge (Priority IK); table order
     "rs050":  ("window $\\times$0.5",  "range", "moderate", "libero_fault_sweep_range_ms_rs050"),
     "rs150":  ("window $\\times$1.5",  "range", "moderate", "libero_fault_sweep_range_ms_rs150"),
+    "lop001": ("lock +0.01 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop001"),
+    "lop002": ("lock +0.02 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop002"),
+    "lop005": ("lock +0.05 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop005"),
     "lop010": ("lock +0.1 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop010"),
     "lom010": ("lock $-$0.1 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lom010"),
-    "lop005": ("lock +0.05 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop005"),
-    "lop002": ("lock +0.02 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop002"),
-    "lop001": ("lock +0.01 rad", "locked", "locked", "libero_fault_sweep_locked_ms_lop001"),
 }
+FIG_MS = {"rs050": "window\n$\\times$0.5", "rs150": "window\n$\\times$1.5",   # bar figure: main variants only
+          "lop010": "lock\n+0.1 rad", "lom010": "lock\n$-$0.1 rad"}             # (angle sweep -> Fig 6)
 N50_METHODS = ["b1", "ik", "ik_pose", "prio"]
 N50_LABEL = {"b1": "B1", "ik": "B-IK pos", "ik_pose": "B-IK pose", "prio": "Priority IK"}
 
@@ -385,7 +387,8 @@ def main():
         if n == 20:
             rrows.append([lab, level, n, f"{np.mean(ex_s):.2f}", f"{np.mean(ms_s):.2f}",
                           f"{np.mean(ms_s) - np.mean(ex_s):+.2f}", f"{b}:{c} ({fmt_p(mcnemar(b, c))})"])
-            bars.append((f"{lab}\n({n} cond.)", np.mean(ex_s), np.mean(ms_s)))
+            if tag in FIG_MS:
+                bars.append((FIG_MS[tag], np.mean(ex_s), np.mean(ms_s)))
     if rrows:
         write_table(OUT, "tab_misspec",
                     ["Misspecification", "Level", "Cond.", "Exact", "Misspec.", "$\\Delta$", "paired (misspec:exact)"],
@@ -396,33 +399,44 @@ def main():
         ax.bar(x - 0.2, [b[1] for b in bars], 0.38, color=COLOR["prio"], label="exact")
         ax.bar(x + 0.2, [b[2] for b in bars], 0.38, color=COLOR["pos"], label="misspecified")
         ax.set_xticks(x); ax.set_xticklabels([b[0] for b in bars]); ax.set_ylim(0, 1); ax.set_ylabel("Success rate")
-        ax.legend(frameon=False, ncol=2); ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
+        ax.legend(frameon=False, ncol=2, loc="upper right"); ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
+        ax.set_title("Priority IK, 20 conditions each", fontsize=7)
         savefig(fig, OUT, "fig_misspec"); report.append("tab_misspec, fig_misspec")
 
     # Fig 6: sensitivity to the lock-angle error (Priority IK, joints 1,3,5,6,7, locked)
     J5 = [1, 3, 5, 6, 7]
-    def mean_over(dirname, key):
+    def mean_over(dirname, key, joints=None):
         v = []
         for t in TASKS:
-            for j in J5:
+            for j in (joints or J5):
                 r = load(os.path.join(R, dirname, fname("locked", t, j))) if dirname else data.get(("locked", t, j, key))
                 if r is None or r["score"] is None:
                     return None
                 v.append(r["score"])
         return float(np.mean(v))
-    pts = [(0.0, mean_over(None, "prio"))]
-    for off, tag in [(0.01, "lop001"), (0.02, "lop002"), (0.05, "lop005"), (0.10, "lop010")]:
-        m = mean_over(MS[tag][3], None)
-        if m is not None:
-            pts.append((off, m))
+    GROUPS = [("all (J1,3,5,6,7)", J5, "-", 1.6, 3.5), ("proximal (J1,3)", [1, 3], "--", 1.0, 2.5),
+              ("distal (J5,6,7)", [5, 6, 7], ":", 1.0, 2.5)]
+    curves = {}
+    for g, js, _, _, _ in GROUPS:
+        pts_g = [(0.0, mean_over(None, "prio", js))]
+        for off, tag in [(0.01, "lop001"), (0.02, "lop002"), (0.05, "lop005"), (0.10, "lop010")]:
+            m = mean_over(MS[tag][3], None, js)
+            if m is not None:
+                pts_g.append((off, m))
+        curves[g] = pts_g
+    pts = curves[GROUPS[0][0]]
     b1 = mean_over(None, "b1")
     if len(pts) >= 3 and pts[0][1] is not None and b1 is not None:
         fig, ax = plt.subplots(figsize=(3.5, 1.9))
-        ax.plot([p[0] for p in pts], [p[1] for p in pts], marker="o", ms=3.5, lw=1.6, color=COLOR["prio"], label="Priority IK")
+        for g, _, ls, lw, ms in GROUPS:
+            c = curves[g]
+            ax.plot([p[0] for p in c], [p[1] for p in c], marker="o", ms=ms, lw=lw, ls=ls, color=COLOR["prio"],
+                    alpha=1.0 if lw > 1.2 else 0.75, label=f"Priority IK, {g}")
+        ax.set_xticks([0, 0.01, 0.02, 0.05, 0.10]); ax.set_xticklabels(["0", ".01", ".02", ".05", ".10"])
         ax.axhline(b1, ls="--", lw=0.9, color=COLOR["b1"], label="B1 (no intervention)")
         ax.set_xlabel("error in the assumed lock angle [rad]"); ax.set_ylabel("Success rate (locked)")
         ax.set_ylim(0, 1); ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
-        ax.legend(frameon=False, fontsize=6)
+        ax.legend(frameon=False, fontsize=5.5, loc="upper right")
         savefig(fig, OUT, "fig_lock_angle_sensitivity"); report.append("fig_lock_angle_sensitivity")
     else:
         print("  lock-angle sensitivity: need >=3 points -> skipped")
