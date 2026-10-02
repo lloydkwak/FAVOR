@@ -6,7 +6,8 @@ For random Panda configurations and a small lock offset on one joint, checks tha
   (3) for shoulder/elbow faults the orientation is recovered too (2nd priority).
 Run inside the container:  python /workspace/docker/tests/test_ik_priority.py
 """
-import sys
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, "/workspace/docker")
 import torch
 from fault_kinematics import PandaKinematics

@@ -230,7 +230,7 @@ def main():
 
     # Table 1: main results
     cols = [m for m in METHODS if any((lv, m) in means for lv in LEVELS)]
-    header = ["Fault level"] + [SHORT[m] for m in cols] + ["Oracle$^\\dagger$"]
+    header = ["Fault level"] + [SHORT[m] for m in cols] + ["Best B-IK$^\\dagger$"]
     trows = []
     for level in LEVELS:
         row = [level]
@@ -254,14 +254,14 @@ def main():
     trows.append(allrow)
     write_table(OUT, "tab_main", header, trows,
                 "Mean success rate over 28 conditions (4 tasks $\\times$ 7 joints, $n{=}20$ episodes, identical seeds) "
-                "per fault level. $^\\dagger$Oracle that picks, per condition, the better B-IK setting after seeing the "
+                "per fault level. $^\\dagger$Best B-IK picks, per condition, the better B-IK setting after seeing the "
                 "results. Superscripts give the number of conditions when fewer than 28 were run.", "tab:main")
     report.append("tab_main")
 
     # Table 2: paired tests Priority IK vs others
     if any(k[3] == "prio" for k in data):
         comp = [m for m in ["b1", "eci", "rg", "pos", "pose"] if m in have] + ["best"]
-        header = ["Fault level"] + [("vs " + (SHORT[m] if m != "best" else "Oracle$^\\dagger$")) for m in comp]
+        header = ["Fault level"] + [("vs " + (SHORT[m] if m != "best" else "Best B-IK$^\\dagger$")) for m in comp]
         trows, tot = [], {m: [0, 0] for m in comp}
         for level in LEVELS:
             row = [level]
@@ -362,7 +362,7 @@ def main():
         ax.plot(range(4), ys, marker="o", ms=3, lw=1.6 if m == "prio" else 1.0, color=COLOR[m], label=METHODS[m][0])
     if all((lv, "best") in means for lv in LEVELS):
         ax.plot(range(4), [means[(lv, "best")][0] for lv in LEVELS], ls="--", lw=0.9, color=COLOR["best"],
-                label="best(pos,pose) oracle")
+                label="Best B-IK (per condition)")
     ax.set_xticks(range(4)); ax.set_xticklabels(["Mild", "Moderate", "Severe", "Locked"])
     ax.set_ylabel("Mean success rate"); ax.set_ylim(0, 0.9)
     ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)

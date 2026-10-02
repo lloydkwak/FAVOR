@@ -19,7 +19,7 @@ misspecified fault parameters is evaluated separately (`native_joint_policy_ms.p
 
 ## Main result (4 tasks × 7 joints per level, n = 20, identical seeds)
 
-| Fault level | B1 | E-C-I | B-IK pos | B-IK pose | Oracle best(pos, pose)† | **Priority IK** |
+| Fault level | B1 | E-C-I | B-IK pos | B-IK pose | Best B-IK† | **Priority IK** |
 |---|---|---|---|---|---|---|
 | mild | 0.66 | 0.70 | 0.75 | 0.70 | 0.77 | 0.70 |
 | moderate | 0.42 | 0.45 | 0.59 | 0.51 | 0.65 | **0.65** |
@@ -27,7 +27,7 @@ misspecified fault parameters is evaluated separately (`native_joint_policy_ms.p
 | locked | 0.11 | 0.19 | 0.30 | 0.32 | 0.43 | **0.48** |
 | all 112 | 0.37 | – | 0.52 | 0.48 | 0.60 | **0.60** |
 
-† picks the better B-IK setting per condition after seeing the results. Priority IK uses one setting for
+† Best B-IK picks the better B-IK setting (pos or pose) per condition after seeing the results; it is not an upper bound. Priority IK uses one setting for
 every joint and beats both fixed B-IK settings over all 112 conditions (paired McNemar, p < 1e-12).
 Full tables and figures: `paper/tables/`, `paper/figs/` (regenerate with `scripts_paper/make_paper_figures.py`).
 
