@@ -2,6 +2,7 @@
 data/
 results/
 analysis_out/
+paper/video/
 
 # upstream clones created by third_party/setup_third_party.sh
 diffusion_policy/

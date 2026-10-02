@@ -108,6 +108,9 @@ docker compose -f docker/docker-compose.libero.yml run --rm -v $PWD/analysis_out
     python /workspace/scripts_libero/ik_select_and_layer1v2.py
 # figures and tables (host; needs numpy + matplotlib)
 python scripts_paper/make_paper_figures.py --results results --out paper
+# qualitative figures + supplementary video: re-renders selected sweep seeds, checks them
+# against the sweep JSONs (results/qual/compose_report.md), writes paper/figs/fig_setup, fig_qual_*
+./run_qual_media.sh
 # unit tests (container)
 docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/docker/tests/test_ik_priority.py
 docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/docker/tests/test_ik_priority_rev.py

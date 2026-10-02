@@ -1,0 +1,100 @@
+"""
+Pick episodes for the qualitative figures and the supplementary video from existing
+locked-sweep results (no new experiments: the chosen seeds are re-run with rendering on,
+and render_qualitative.py checks the outcome against these JSONs).
+
+A seed qualifies for a scenario when Priority IK succeeds and B1 and the contrast
+baseline(s) fail on that exact seed.
+  A  distal   (J6, J7)  contrast: B-IK pose, preferred Bowl-Stove J7
+  B  proximal (J1, J3)  contrast: B-IK pos
+  C  video only: best remaining (task, joint) on another task, every baseline fails
+Seeds from the earliest chunk are preferred: the re-run only needs chunks up to the seed's
+(seeds 10000+5k .. 10000+5k+4 form chunk k).
+
+Usage (host, repo root): python scripts_paper/select_qual_scenarios.py [--results results]
+                          [--out results/qual/scenarios.json]
+"""
+import argparse, json, os
+
+TASKS = ["alphabet_soup", "milk", "bowl_ramekin", "bowl_stove"]
+DIRS = {"b1": "libero_fault_sweep_locked_b1", "pos": "libero_fault_sweep_locked_ik",
+        "pose": "libero_fault_sweep_locked_ik_pose", "prio": "libero_fault_sweep_locked_prio",
+        "rg": "libero_fault_sweep_locked_rg"}
+SPECS = [
+    dict(id="A_distal", joints=[7, 6], contrast=["pose"], prefer=("bowl_stove", 7)),
+    dict(id="B_proximal", joints=[1, 3], contrast=["pos"], prefer=None),
+    dict(id="C_extra", joints=[1, 2, 3, 4, 5, 6, 7], contrast=["pos", "pose"], prefer=None),
+]
+START, NENV = 10000, 5
+
+
+def load(R, m, t, j):
+    p = os.path.join(R, DIRS[m], f"{t}_robot0_joint{j}_locked_na.json")
+    if not os.path.exists(p):
+        return None
+    pe = json.load(open(p))["per_episode"]
+    return {int(k): float(v) for k, v in pe.items()}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--results", default="results")
+    ap.add_argument("--out", default="results/qual/scenarios.json")
+    a = ap.parse_args()
+    R = a.results
+
+    rows = []
+    for t in TASKS:
+        for j in range(1, 8):
+            d = {m: load(R, m, t, j) for m in DIRS}
+            if any(d[m] is None for m in ("b1", "pos", "pose", "prio")):
+                continue
+            seeds = sorted(d["prio"])
+            mean = {m: (sum(v.values()) / len(v) if v else None) for m, v in d.items()}
+            rows.append(dict(task=t, joint=j, seeds=seeds, ep=d, mean=mean))
+
+    out, used = [], set()
+    for sp in SPECS:
+        cands = []
+        for r in rows:
+            if r["joint"] not in sp["joints"] or (r["task"], r["joint"]) in used:
+                continue
+            if sp["id"] == "C_extra" and r["task"] in {o["task"] for o in out}:
+                continue
+            ep = r["ep"]
+            good = [s for s in r["seeds"] if ep["prio"][s] >= 1 and ep["b1"][s] < 1
+                    and all(ep[c][s] < 1 for c in sp["contrast"])]
+            strict = [s for s in good if ep["pos"][s] < 1 and ep["pose"][s] < 1]
+            if not good:
+                continue
+            gap = r["mean"]["prio"] - max(r["mean"][c] for c in sp["contrast"])
+            pref = sp["prefer"] == (r["task"], r["joint"])
+            cands.append((pref, len(strict), gap, r, good, strict))
+        if not cands:
+            print(f"[{sp['id']}] no qualifying condition"); continue
+        cands.sort(key=lambda c: (c[0], round(c[2], 2), c[1]), reverse=True)
+        print(f"\n[{sp['id']}] candidates (task, joint, n_strict, n_good, gap, means b1/pos/pose/prio):")
+        for pref, ns, gap, r, good, strict in cands[:6]:
+            m = r["mean"]
+            print(f"  {r['task']:<14} J{r['joint']}  strict={ns:2d} good={len(good):2d} gap={gap:+.2f}  "
+                  f"{m['b1']:.2f}/{m['pos']:.2f}/{m['pose']:.2f}/{m['prio']:.2f}{'  (preferred)' if pref else ''}")
+        _, _, gap, r, good, strict = cands[0]
+        pool = strict or good
+        chunk = lambda s: (s - START) // NENV
+        k = min(chunk(s) for s in pool)
+        picks = [s for s in pool if chunk(s) == k][:2]
+        used.add((r["task"], r["joint"]))
+        ep = r["ep"]
+        out.append(dict(id=sp["id"], task=r["task"], joint=r["joint"], seeds=picks,
+                        n_test=NENV * (k + 1), contrast=sp["contrast"],
+                        orig={s: {m: ep[m][s] for m in ep if ep[m] is not None and s in ep[m]} for s in picks},
+                        cond_mean={m: v for m, v in r["mean"].items() if v is not None}))
+        print(f"  -> {r['task']} J{r['joint']} seeds {picks} (re-run n_test={NENV * (k + 1)})")
+
+    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    json.dump(out, open(a.out, "w"), indent=2)
+    print(f"\nwrote {a.out}")
+
+
+if __name__ == "__main__":
+    main()

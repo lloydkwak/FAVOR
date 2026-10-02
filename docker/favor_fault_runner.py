@@ -54,7 +54,10 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             max_steps=400, n_obs_steps=2, n_action_steps=8,
             render_obs_key='agentview_image', fps=10, crf=22,
             past_action=False, abs_action=True, tqdm_interval_sec=5.0,
-            n_envs=None, actuation_mode='osc', joint_output_max=0.2, joint_damping_ratio=1.0, joint_kp=150):
+            n_envs=None, actuation_mode='osc', joint_output_max=0.2, joint_damping_ratio=1.0, joint_kp=150,
+            record_cfg=None):
+        # record_cfg: optional dict for render_recorder.RenderRecorder (qualitative figures and
+        # videos). None (every sweep) leaves the env chain and init_fn exactly as before.
         # actuation_mode='osc'  -> unchanged existing behavior (OSC_POSE, EE-pose actions)
         # actuation_mode='joint' -> JOINT_POSITION controller, action = q_target(7)+gripper(1),
         #                           self.abs_action forced False below so run() (inherited,
@@ -177,6 +180,9 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             if actuation_mode == 'joint':
                 inner = JointActuationWrapper(inner, output_max=joint_output_max)
             faulted = FaultInjector(inner, fault_joint_name, fault_type, fault_severity)
+            if record_cfg is not None and enable_render:
+                from render_recorder import RenderRecorder
+                faulted = RenderRecorder(faulted, fault_joint_name=fault_joint_name, **record_cfg)
             return MultiStepWrapper(
                 VideoRecordingWrapper(
                     RobomimicImageWrapper(
@@ -227,7 +233,8 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
         for i in range(n_test):
             seed = test_start_seed + i
             enable_render = i < n_test_vis
-            def init_fn(env, seed=seed, enable_render=enable_render, output_dir=output_dir):
+            def init_fn(env, seed=seed, enable_render=enable_render, output_dir=output_dir,
+                        record=record_cfg is not None):
                 assert isinstance(env.env, VideoRecordingWrapper)
                 env.env.video_recoder.stop()
                 env.env.file_path = None
@@ -238,6 +245,8 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
                 assert isinstance(env.env.env, RobomimicImageWrapper)
                 env.env.env.init_state = None
                 env.seed(seed)
+                if record and hasattr(env.env.env.env, 'set_record_seed'):
+                    env.env.env.env.set_record_seed(seed)
             env_seeds.append(seed); env_prefixs.append('test/')
             env_init_fn_dills.append(dill.dumps(init_fn))
 
