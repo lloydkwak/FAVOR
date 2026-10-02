@@ -1,11 +1,7 @@
 """
-LIBERO Phase 2 fault sweep: mode='random_n' (the required control for
-select's result to mean anything -- see native_joint_policy.py's random_n
-docstring). Same 21 conditions, same seeds (TEST_START_SEED=10000) as
-Phase 1 (B1) and Phase 2 select, and the SAME n_select/chunk_size/n_envs
-as the select sweep (32/8/5) so this is a fair comparison: if random_n
-matches select's improvement over B1, the certificate isn't adding value
-beyond "draw N, keep any of them" at this N.
+Random-N sweep on LIBERO, locked faults: draw N candidates and keep one at random -- the control
+for Select. Same conditions and seeds as B1 / Select, and the same n_select / chunk_size / n_envs as
+the Select sweep (32 / 8 / 5).
 
 Usage: python run_libero_fault_sweep_phase2_random_n.py <task_name>
 """

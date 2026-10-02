@@ -1,31 +1,8 @@
 """
-E-C-I sweep on LIBERO (Franka Panda, 7-DOF): SAME 21 conditions, SAME
-seeds (TEST_START_SEED=10000, n_test=20) as B1/select/random_n
-(sweep_grid_libero.py), so this is a genuine same-platform, same-seed
-comparison -- unlike the project's earlier E-C-I evidence, which came
-from two DIFFERENT platforms tested at different times:
-
-  - Lift/Can/Square (robosuite, Franka Panda, 7-DOF): E-C-I showed real
-    gains (Lift joint1 +0.60, joint3 +0.18, joint5 +0.12, joint6 +0.14;
-    Can joint6 +0.42) but also one regression (Can joint7 -0.04) and was
-    NEVER validated with a paired significance test (McNemar) at the
-    time -- this was flagged explicitly in that session's own analysis.
-  - RoboTwin (aloha, 6-DOF): E-C-I showed 0/8 improvement, consistent
-    with the self-motion manifold argument (dim M = n-6 = 0 for 6-DOF,
-    so no joint has room to redistribute into regardless of method).
-
-Neither of those is a controlled head-to-head against Select, which was
-only ever run on LIBERO. This script closes that gap: same policy
-checkpoints, same fault conditions, same seeds, same per-episode logging
-(for McNemar) as the existing B1/select/random_n LIBERO sweeps, so a
-direct 4-way comparison (B1 / E-C-I / Select / Random-N) becomes possible
-on one platform.
-
-mode='eci' in NativeJointPolicy already implements this via
-joint_eci_projector.eci_conditional_sample (PPR: predict-project-renoise
-at every denoising step, projecting ALL 7 joints -- identity for healthy
-joints, narrowed range for the faulted one) -- no new mechanism, just a
-new grid to run it against.
+E-C-I sweep on LIBERO, locked faults: same conditions and seeds (TEST_START_SEED=10000, n_test=20)
+as B1 / Select / Random-N, with per-episode logging for paired McNemar tests.
+mode='eci' in NativeJointPolicy: joint_eci_projector.eci_conditional_sample (predict-project-renoise
+at every denoising step; identity for healthy joints, admissible range for the faulted one).
 
 Usage: python run_libero_fault_sweep_eci.py <task_name>
 """

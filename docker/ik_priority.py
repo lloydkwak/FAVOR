@@ -2,7 +2,7 @@
 Task-priority re-embodiment IK (Nakamura 1987; Siciliano & Slotine 1991): with the
 faulted joint fixed, the 6 healthy joints first restore the intended EE POSITION;
 orientation is corrected only inside the null space of the position task, so it
-can never be bought with position error. Motivation (scripts_libero/mip_offline.py):
+can never be bought with position error. Motivation (offline analysis of B-IK):
 full-pose IK fails on j6/j7 because it gives up 4-8 cm of position to fix
 orientation, while position-only IK leaves ~3 deg tilt on j1/j3 that the null
 space could have removed.

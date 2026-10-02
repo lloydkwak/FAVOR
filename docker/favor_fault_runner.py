@@ -7,7 +7,7 @@ the official class, so there is no smaller hook point available without
 editing the official file itself, which we do not do).
 
 run() is NOT overridden — inherited byte-for-byte from RobomimicImageRunner,
-so the policy rollout / video / logging logic is identical to Phase 2.
+so the policy rollout / video / logging logic is identical to the official runner.
 """
 import os, collections, pathlib, math, dill
 import h5py

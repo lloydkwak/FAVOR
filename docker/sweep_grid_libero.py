@@ -1,15 +1,6 @@
-"""Sweep grid for the LIBERO Phase 1 fault sweep (B1 baseline only).
-
-Mirrors sweep_grid.py's structure and TEST_START_SEED convention (fixed
-across all conditions so later paired comparisons, e.g. against a
-selection-based method, are valid), scoped to the 3 LIBERO tasks whose
-retraining succeeded after the gripper-index fix (bowl_stove and drawer
-are excluded pending a separate closed-loop-rollout investigation --
-see TODO in project notes).
-
-Phase 1 starts with locked-only, matching how the RoboTwin sweep was
-staged (locked first to find which joint/task combinations are even
-worth extending to range_reduced/velocity_limited).
+"""
+Locked-fault grid for the LIBERO sweeps: 4 tasks x 7 joints, n_test=20, fixed seeds
+(TEST_START_SEED=10000 for every condition and method, so episodes can be paired).
 """
 
 JOINTS = [f"robot0_joint{i}" for i in range(1, 8)]
@@ -40,17 +31,7 @@ TASKS = {
         "dataset": "/workspace/data/robomimic/datasets/libero_bowl_stove/ph/image_abs.hdf5",
         "joint_kp": 150,
     },
-    # Articulated, contact-rich task: pulling the drawer against its resistance
-    # needs higher joint stiffness than free-space pick-and-place. Demo-action
-    # replay: kp=150 0/5, kp>=300 3/5; policy (epoch-50 ckpt, n=20): kp150 0.00,
-    # kp300 0.15, kp600 0.50. PROVISIONAL kp -- finalize after the resumed-training
-    # checkpoint is evaluated. Do not start drawer sweeps before that.
-    "drawer": {
-        "ckpt": "/workspace/data/outputs/joint_train_libero_drawer/checkpoints/latest.ckpt",
-        "dataset": "/workspace/data/robomimic/datasets/libero_drawer/ph/image_abs.hdf5",
-        "joint_kp": 600,
-    },
 }
 
-N_TEST = 20  # Phase 1 scale (narrower than Phase 2's 50) to survey all 21 conditions cheaply first
-TEST_START_SEED = 10000  # same convention as sweep_grid.py -- fixed across ALL conditions
+N_TEST = 20
+TEST_START_SEED = 10000  # fixed across ALL conditions and methods

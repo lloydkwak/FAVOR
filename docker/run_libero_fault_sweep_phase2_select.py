@@ -1,15 +1,6 @@
 """
-LIBERO Phase 2 fault sweep: mode='select' only (Random-N and select_comp
-deferred -- see project notes), same 21 conditions as Phase 1
-(sweep_grid_libero.py: 7 joints x locked x 3 tasks), SAME seeds
-(TEST_START_SEED=10000) for valid paired comparison against the
-fault_sweep_libero_phase1_results.csv B1 numbers.
-
-n_select=8, n_envs=2 (batch=16 for the diffusion call) -- chosen for GPU
-memory: n_envs=5 with n_select=8 (batch=40) hit CUDA OOM in
-test_select_mode_fault.py; n_envs=2 leaves headroom. n_test=20 is reached
-over multiple reset rounds within the runner (FaultRobomimicImageRunner
-handles this internally via n_envs < n_test).
+Select sweep on LIBERO, locked faults: draw N=32 candidates and keep the one with the smallest
+EE discrepancy under the fault (fault_certificate.py). Same conditions and seeds as B1 / Random-N.
 
 Usage: python run_libero_fault_sweep_phase2_select.py <task_name>
 """

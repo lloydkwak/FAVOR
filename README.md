@@ -47,7 +47,7 @@ so it bakes the J6/J7 trade-off into the trajectory before the post-hoc step.
 
 ## Repository layout
 
-~~
+```
 docker/                     environment (Dockerfile.libero, compose) + all method and runner code
   assets/franka_panda.urdf    Panda kinematics used by every IK-based method (FK matched to the sim to ~1 mm)
   fault_injector.py           locked / range_reduced / velocity_limited faults (MuJoCo)
@@ -64,23 +64,23 @@ paper/figs, paper/tables    generated figures (PDF/PNG) and tables (LaTeX/CSV)
 run_main_sweeps.sh          every main-result sweep
 run_x_queue.sh, run_ms_queue.sh, run_n50_queue.sh   RG-DDPM / ablations / budget variant, misspecification, n=50
 run_libero_all_tasks.sh     policy training
-~~
+```
 
 ## Setup
 
-~~bash
+```bash
 git clone https://github.com/lloydkwak/FAVOR.git && cd FAVOR
 bash third_party/setup_third_party.sh        # LIBERO @8f1084e, diffusion_policy @20537a5 + favor.patch
 docker compose -f docker/docker-compose.libero.yml build
-~~
+```
 
 Data: download the LIBERO demonstrations with LIBERO's own download script, then convert each task to the
 robomimic layout the joint-space pipeline consumes (absolute joint-position actions):
 
-~~bash
+```bash
 python scripts_libero/convert_libero_to_robomimic.py --libero-file <LIBERO demo .hdf5> \
     --out data/robomimic/datasets/libero_<task>/ph/image_abs.hdf5
-~~
+```
 
 | Task (this repo) | LIBERO task definition (suite / bddl) | demos |
 |---|---|---|
@@ -93,15 +93,16 @@ The matching LIBERO demo file is `<suite>/<task>_demo.hdf5` (same name as the bd
 
 ## Reproduce
 
-~~bash
+```bash
 ./run_libero_all_tasks.sh                     # train joint-space Diffusion Policies (4 tasks)
 ./run_main_sweeps.sh                          # all main sweeps -> results/
 ./run_x_queue.sh rg locked range:0            # RG-DDPM
 ./run_x_queue.sh prio_b015 range:2            # Priority IK + motion budget (appendix)
 ./run_x_queue.sh prio_rev locked              # ablation: orientation-first priority
 ./run_x_queue.sh rg_prio locked               # ablation: RG-DDPM sampling + Priority IK execution
-./run_ms_queue.sh none rs050:range:0 rs150:range:0 lop010:locked lom010:locked   # misspecified faults
+./run_ms_queue.sh none rs050:range:0 rs150:range:0 lop001:locked lop002:locked lop005:locked lop010:locked lom010:locked   # misspecified faults
 ./run_n50_queue.sh                            # fresh-seed n=50 replication
+docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/docker/run_libero_confirm_n50.py   # appendix: n=50 for B1 / Select / Random-N / E-C-I
 # Layer-1 kinematic analysis (writes analysis_out/layer1_v2.csv; part (A) already fixed the B-IK weights)
 docker compose -f docker/docker-compose.libero.yml run --rm -v $PWD/analysis_out:/workspace/analysis_out libero \
     python /workspace/scripts_libero/ik_select_and_layer1v2.py
@@ -110,6 +111,6 @@ python scripts_paper/make_paper_figures.py --results results --out paper
 # unit tests (container)
 docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/docker/tests/test_ik_priority.py
 docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/docker/tests/test_ik_priority_rev.py
-~~
+```
 
 Results (`results/`) are not tracked; every number in `paper/` is regenerated from them.

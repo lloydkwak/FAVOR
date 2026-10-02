@@ -3,7 +3,7 @@ Native joint-space E-C-I: implements the PPR (Predict-Project-Renoise)
 structure (arXiv 2601.21033) for enforcing actuator-fault constraints
 during diffusion denoising, WITHOUT any IK.
 
-REDESIGNED this session: project_fault now applies to ALL 7 joints
+Design: project_fault now applies to ALL 7 joints
 uniformly, not just a single "known faulted joint". Rationale: which
 joint (if any) is faulted is not something the projection mechanism
 should need to know about specially -- in deployment, any joint could be
@@ -11,7 +11,7 @@ the one that's actually faulted, so the constraint is applied per-joint
 across the board, using each joint's own valid range. A healthy joint's
 range is simply its full physical range, making the projection an
 identity operation for that joint (verified: this is why B1 and FAVOR
-matched exactly under a vacuous/full-range test this session, once the
+matched exactly under a vacuous/full-range test, once the
 earlier normalized-vs-physical-units clamp bug was also fixed). A faulted
 joint's range is narrowed (locked = zero-width range at q_lock,
 range_reduced = narrowed range, velocity_limited = per-step delta cap).
@@ -27,7 +27,7 @@ def project_fault(q_traj, q_lo, q_hi, v_max=None, q_anchor=None):
     """
     THE Pi_fault operator, applied to ALL 7 joints simultaneously.
 
-    CRITICAL UNIT REQUIREMENT (bug found and fixed this session): q_traj,
+    CRITICAL UNIT REQUIREMENT: q_traj,
     q_lo, q_hi, v_max, q_anchor must ALL be in the SAME space as q_traj
     actually lives in at the call site. Inside eci_conditional_sample,
     q_traj (x0_hat's joint slice) is in the diffusion model's NORMALIZED
@@ -56,7 +56,7 @@ def project_fault(q_traj, q_lo, q_hi, v_max=None, q_anchor=None):
 
     def _bshape(t, trailing_ones):
         # Accepts (7,) or (B,7); returns a tensor broadcastable against
-        # (B, *trailing_ones, 7). Bug fix (this session): the dynamic
+        # (B, *trailing_ones, 7). Note: the dynamic
         # per-episode fault_spec built from the environment has (B,7)
         # bounds (each env instance's actual fault value can differ),
         # while earlier static tests used (7,) -- this makes project_fault
@@ -108,7 +108,7 @@ def eci_conditional_sample(policy, condition_data, condition_mask, fault_spec,
     redistribution here -- that would reintroduce exactly the kind of
     externally-imposed, network-never-trained-on configuration that native
     joint-space retraining was meant to eliminate (the EE+IK OOD problem from
-    earlier this session). This iterates the network's OWN learned corrector
+    earlier). This iterates the network's OWN learned corrector
     instead.
     """
     """
@@ -211,7 +211,7 @@ def normalize_joint_bounds(policy, q_lo_phys, q_hi_phys, v_max_phys=None, q_anch
     normalizer = policy.normalizer['action']
 
     def _norm(q_phys):
-        # Accepts either (7,) or (B,7). BUG FIX (found this session): the
+        # Accepts either (7,) or (B,7). Note: the
         # dynamic per-episode fault_spec built from the environment has
         # (B,7) q_lo/q_hi (each env instance's actual lock/range value can
         # differ), whereas the static vacuous-test fault_spec used (7,) --

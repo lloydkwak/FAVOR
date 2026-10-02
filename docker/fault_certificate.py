@@ -11,10 +11,9 @@ joint vector) and the SE(3) discrepancy this creates, batched over
 (N samples, H waypoints).
 
 Design note on WHY this targets the non-faulted joints, not the faulted
-one: Phase 2 (RoboTwin) found posthoc-clipping the faulted joint alone is
-IDENTICAL to B1 for locked faults (env.step() already forces q_lock, so
-clipping the command to the same value changes nothing) -- proven as an
-identity, not measured as a null result. The only lever is how the other
+one: clipping the faulted joint alone is IDENTICAL to B1 for locked faults
+(env.step() already forces q_lock, so clipping the command to the same value
+changes nothing). The only lever is how the other
 6 joints compensate, which is exactly what ε(Q) scores: it is the EE
 discrepancy Phi(q) introduces, not a joint-space penalty.
 """

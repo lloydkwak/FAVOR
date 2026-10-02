@@ -1,21 +1,11 @@
 """
-Shared FK/Jacobian utilities for the null-space steering design.
+Batched FK / Jacobian of the Franka Panda (pytorch_kinematics), shared by every IK-based method.
 
-URDF and world-transform choice are load-bearing, not incidental -- see D1
-verification (scripts_libero/verify_fk_final.py):
-
-  - robosuite's own bullet_data/panda_description/panda_arm_hand.urdf
-    (used for its internal pybullet IK) has WRONG joint origins: link1 at
-    q=0 comes out at z=0, when the live MuJoCo sim's robot0_link1 body is
-    at z=0.333 (the correct Franka spec value). This is a pybullet-IK
-    approximation artifact, not usable for real FK.
-  - curobo's franka_panda.urdf gives the correct z=0.333 for link1 at q=0,
-    and matches the live sim's robot0_right_hand position to ~1mm across
-    20 random configurations once the robot0_base world transform is
-    applied: world_pos = base_rot @ local_pos(q) + base_pos, where
-    base_pos/base_rot are read directly from the sim (base_rot is the
-    identity for these tasks, but is applied anyway rather than assumed,
-    so this still works if a future task mounts the robot rotated).
+Uses the vendored docker/assets/franka_panda.urdf (franka_ros, via cuRobo; see assets/NOTICE). It matches
+the live MuJoCo sim's robot0_right_hand position to ~1 mm over random configurations once the
+robot0_base world transform is applied: world_pos = base_rot @ local_pos(q) + base_pos, with
+base_pos/base_rot read from the sim each episode. (robosuite's own pybullet URDF has wrong joint
+origins and is not usable for FK.)
 """
 import os
 
@@ -23,11 +13,7 @@ import numpy as np
 import torch
 import pytorch_kinematics as pk
 
-_REPO_URDF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "franka_panda.urdf")
-CUROBO_PANDA_URDF = _REPO_URDF if os.path.isfile(_REPO_URDF) else (
-    "/workspace/RoboTwin/envs/curobo/src/curobo/content/assets/"
-    "robot/franka_description/franka_panda.urdf"
-)
+CUROBO_PANDA_URDF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "franka_panda.urdf")
 
 
 class PandaKinematics:
@@ -38,9 +24,7 @@ class PandaKinematics:
     def __init__(self, device="cpu", urdf_path=CUROBO_PANDA_URDF):
         if not os.path.isfile(urdf_path):
             raise FileNotFoundError(
-                f"Panda URDF not found at {urdf_path}. This path is inside "
-                "the RoboTwin clone (envs/curobo/...); if RoboTwin/ has been "
-                "moved or pruned, update CUROBO_PANDA_URDF."
+                f"Panda URDF not found at {urdf_path} (expected docker/assets/franka_panda.urdf)."
             )
         self.device = device
         self.chain = pk.build_serial_chain_from_urdf(

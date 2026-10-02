@@ -69,7 +69,7 @@ class FaultInjector(gym.Wrapper):
     def get_base_pose(self):
         """Public RPC-able getter for the robot base's WORLD pose
         (position + rotation matrix), needed by NativeJointPolicy's
-        'select'/'select_comp' modes to set PandaKinematics' base
+        'select' / 'ik' modes to set PandaKinematics' base
         transform once per episode (D1-verified: FK matches the live sim
         to ~1mm only once this transform is applied -- see
         fault_kinematics.py). Read once per episode in reset(), not

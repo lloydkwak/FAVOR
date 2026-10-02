@@ -1,23 +1,8 @@
 """
-n_test=50 confirmation run for the 5 conditions where select improved over
-B1 at n_test=20 (fault_sweep_libero_phase2_select_results.csv). Runs B1,
-select, and random_n back-to-back for each condition, all at n_test=50
-with the SAME TEST_START_SEED=10000 base (the first 20 of these 50 seeds
-are the exact same episodes already run at n_test=20 -- FaultRobomimicImageRunner
-generates seeds sequentially from test_start_seed, so this is a superset,
-not a fresh independent sample).
-
-Purpose: at n=20, only 2/5 conditions reached significance (Fisher's exact,
-approximate) for select vs B1, and only for select vs random_n. Larger n
-gives more statistical power to confirm the conditions that were
-directionally correct but not yet significant (milk/joint7,
-bowl_ramekin/joint7) and firms up the two that were borderline
-(alphabet_soup/joint5's select-vs-random_n p=0.056).
-
-Saves per-episode success/failure (test/sim_max_reward_{seed}) alongside
-the aggregate score in every result file, enabling a real paired McNemar
-test this time (not the independent-samples Fisher's exact approximation
-used for the n=20 results).
+Appendix: n_test=50 replication of the sample-level interventions (B1, Select, Random-N, E-C-I)
+on the locked conditions where Select looked promising at n=20. Seeds 10000-10049 (a superset of the
+n=20 seeds), per-episode logging for paired McNemar tests.
+The Priority IK replication on fresh seeds is run_confirm_n50_prio.py.
 
 Usage: python run_libero_confirm_n50.py
 """
@@ -43,7 +28,7 @@ CONDITIONS = [
     # included here specifically because ECI, not select, is what found it.
     ("bowl_ramekin", "robot0_joint6"),
     ("bowl_ramekin", "robot0_joint7"),
-    ("bowl_stove", "robot0_joint5"),  # bowl_stove fixture-placement bug fixed this session (favor_fault_runner.py soft-reset patch); n=20 screening: B1=0.65 -> ECI=0.90, Select=0.85, Random-N=0.80
+    ("bowl_stove", "robot0_joint5"),  # bowl_stove fixture-placement bug fixed (favor_fault_runner.py soft-reset patch); n=20 screening: B1=0.65 -> ECI=0.90, Select=0.85, Random-N=0.80
 ]
 N_TEST = 50
 OUT_DIR = "/workspace/results/libero_confirm_n50"

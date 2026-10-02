@@ -1,26 +1,19 @@
+# data, checkpoints and experiment outputs (not versioned)
 data/
 results/
-diffusion_policy/
-__pycache__/
-*.pyc
-results/
-data/robomimic/
-diffusion_policy/data/
+analysis_out/
 
-# External benchmark clones -- large upstream repos, not our code.
-# Our own additions to them are mirrored under favor_robotwin/ instead.
-RoboTwin/
+# upstream clones created by third_party/setup_third_party.sh
+diffusion_policy/
 LIBERO/
 
-# Editor/OS noise
+# python / editor noise
+__pycache__/
+*.pyc
 *.swp
 .DS_Store
-
-# Training/eval stdout logs -- dominated by \r progress-bar spam.
-# The information that matters is already in fault_sweep_*.csv.
-logs_*_train.log
-eval_*.log
-
-# analysis scratch + backups
-analysis_out/
 *.bak_*
+*.log
+
+# legacy local clone from the earlier RoboTwin phase (no longer used)
+RoboTwin/

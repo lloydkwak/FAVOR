@@ -2,8 +2,8 @@
 Fault-knowledge misspecification sweep for Priority IK (lam2=0.2).
 Usage: python run_libero_fault_sweep_ms.py <tag> <task> locked
        python run_libero_fault_sweep_ms.py <tag> <task> range <level_idx>
-tag: rs050 rs150 (range window x0.5 / x1.5), lop010 lom010 (lock angle +/-0.1 rad),
-     wj (wrong neighbour joint), online (detect from tracking error, no prior knowledge)
+tag: rs050 rs150 (range window x0.5 / x1.5),
+     lop000 lop001 lop002 lop005 lop010 lom010 (lock angle error 0 / +0.01 / +0.02 / +0.05 / +0.1 / -0.1 rad)
 Joints: j1 j3 j5 j6 j7 (j2/j4 excluded: every method ~0).
 Output: results/libero_fault_sweep_{locked|range}_ms_<tag>/<same file names as other sweeps>
 """
@@ -16,13 +16,8 @@ from favor_fault_runner import FaultRobomimicImageRunner
 from native_joint_policy_ms import MisspecPrioPolicy, summarize_ms_log
 
 TAGS = {"rs050": ("range_scale", 0.5), "rs150": ("range_scale", 1.5),
-        "lop010": ("lock_offset", 0.1), "lom010": ("lock_offset", -0.1),
-        "lop000": ("lock_offset", 0.0), "lop002": ("lock_offset", 0.02), "lop005": ("lock_offset", 0.05),
-        "wj": ("wrong_joint", None), "online": ("online", None), "online2": ("online", None), "online3": ("online", None), "online4": ("online", None), "delay1": ("delay", 1)}
-DET_KW = {"online2": {"det_tau": 0.02, "det_rel": 3.0, "det_k": 2},
-          "online3": {"det_mode": "stuck", "det_k": 1},
-          "online4": {"det_mode": "stuck", "det_k": 1, "det_margin": 0.0}}
-TAGS["lop001"] = ("lock_offset", 0.01)
+        "lop000": ("lock_offset", 0.0), "lop001": ("lock_offset", 0.01), "lop002": ("lock_offset", 0.02),
+        "lop005": ("lock_offset", 0.05), "lop010": ("lock_offset", 0.1), "lom010": ("lock_offset", -0.1)}
 USE_JOINTS = {f"robot0_joint{i}" for i in [int(x) for x in os.environ.get("MS_JOINTS", "1,3,5,6,7").split(",")]}
 tag, task_name, fault = sys.argv[1], sys.argv[2], sys.argv[3]
 assert tag in TAGS, tag
@@ -70,7 +65,7 @@ for joint_name, fault_type, severity, lvl in conds:
         render_obs_key="agentview_image", abs_action=True,
         actuation_mode="joint", joint_kp=TASKS[task_name].get("joint_kp", 150),
     )
-    policy = MisspecPrioPolicy(base_policy, ms_mode, ms_param, lam2=0.2, base_seed=42, **DET_KW.get(tag, {}),
+    policy = MisspecPrioPolicy(base_policy, ms_mode, ms_param, lam2=0.2, base_seed=42,
                                env_ref=runner.env, fault_joint_name=joint_name,
                                fault_type=fault_type, fault_severity=severity)
     log = runner.run(policy)
