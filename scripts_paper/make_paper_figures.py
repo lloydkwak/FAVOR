@@ -467,6 +467,41 @@ def main():
                         "Fresh-seed replication (locked, $n{=}50$, seeds 10020--10069).", "tab:n50")
             report.append("tab_n50")
 
+    # Table 5: ablation of the correction (locked, 28 conditions, paired vs Priority IK)
+    ABL = [("prio", "Priority IK", "--", None),
+           ("prio_rev", "Orientation-first priority", "task order reversed", "libero_fault_sweep_locked_prio_rev"),
+           ("rg_prio", "RG-DDPM + Priority IK", "sampling-time guidance added", "libero_fault_sweep_locked_rg_prio"),
+           ("rg", "RG-DDPM", "guidance + weighted IK (pose)", None),
+           ("pose", "B-IK pose", "weighted IK, $w_r{=}1.0$", None),
+           ("pos", "B-IK pos", "weighted IK, $w_r{=}0.05$", None)]
+    JA = [1, 3, 5, 6, 7]
+    def rec_of(m, d, t, j):
+        return load(os.path.join(R, d, fname("locked", t, j))) if d else data.get(("locked", t, j, m))
+    arows = []
+    for m, lab, what, d in ABL:
+        recs = {(t, j): rec_of(m, d, t, j) for t in TASKS for j in JOINTS}
+        if any(r is None or r["score"] is None for r in recs.values()):
+            print(f"  ablation {m}: incomplete -> skipped"); continue
+        row = [lab, what] + [f"{np.mean([recs[(t, j)]['score'] for t in TASKS]):.2f}" for j in JA]
+        row.append(f"{np.mean([r['score'] for r in recs.values()]):.2f}")
+        if m == "prio":
+            row.append("--")
+        else:
+            B = Cc = 0
+            for (t, j), r in recs.items():
+                P = data.get(("locked", t, j, "prio"))
+                if P and P["pe"] and r["pe"]:
+                    b, c = paired(P["pe"], r["pe"]); B += b; Cc += c
+            row.append(f"{B}:{Cc} ({fmt_p(mcnemar(B, Cc))})")
+        arows.append(row)
+    if len(arows) >= 2:
+        write_table(OUT, "tab_ablation",
+                    ["Variant", "Change", "J1", "J3", "J5", "J6", "J7", "Mean (28)", "Prio:variant"], arows,
+                    "Ablation of the correction on locked faults (mean success over 4 tasks per joint; J2/J4 are 0 for "
+                    "every method). Paired = episodes only Priority IK solved : only the variant solved.",
+                    "tab:ablation")
+        report.append("tab_ablation")
+
     layer1(data, a.layer1, OUT, report)
     print("wrote:", ", ".join(report))
     print("output dir:", os.path.abspath(OUT))

@@ -31,6 +31,20 @@ misspecified fault parameters is evaluated separately (`native_joint_policy_ms.p
 every joint and beats both fixed B-IK settings over all 112 conditions (paired McNemar, p < 1e-12).
 Full tables and figures: `paper/tables/`, `paper/figs/` (regenerate with `scripts_paper/make_paper_figures.py`).
 
+## Ablation (locked, 28 conditions, paired with Priority IK)
+
+| Variant | Change | J6 | J7 | Mean | Prio : variant |
+|---|---|---|---|---|---|
+| **Priority IK** | – | **0.53** | **0.39** | **0.48** | – |
+| Orientation-first priority | task order reversed | 0.28 | 0.14 | 0.39 | 74 : 26 (p = 1.7e-6) |
+| RG-DDPM + Priority IK | sampling-time guidance added | 0.23 | 0.05 | 0.37 | 86 : 27 (p = 2.3e-8) |
+| RG-DDPM | guidance + weighted IK (pose) | 0.11 | 0.05 | 0.31 | 124 : 30 |
+| B-IK pose | weighted IK | 0.07 | 0.05 | 0.32 | 120 : 31 |
+
+Reversing the order costs most where position and orientation conflict (J6/J7). Adding sampling-time
+guidance in front of Priority IK hurts: RG-DDPM's internal correction is itself a weighted (pose) IK,
+so it bakes the J6/J7 trade-off into the trajectory before the post-hoc step.
+
 ## Repository layout
 
 ~~
@@ -42,13 +56,13 @@ docker/                     environment (Dockerfile.libero, compose) + all metho
   run_libero_fault_sweep_*.py sweep runners (one JSON per condition, per-episode success)
   run_*confirm_n50*.py        n=50 replications
   sweep_grid_libero*.py       task / joint / severity grids and fixed test seeds
-  tests/                      unit tests (E-C-I projection, Priority IK)
+  tests/                      unit tests (E-C-I projection, Priority IK, priority order)
 third_party/                pinned upstream commits + our patch to diffusion_policy (joint-space configs)
 scripts_libero/             LIBERO -> robomimic conversion, evaluation, severity design, Layer-1 analysis
 scripts_paper/              figures and tables from results/
 paper/figs, paper/tables    generated figures (PDF/PNG) and tables (LaTeX/CSV)
 run_main_sweeps.sh          every main-result sweep
-run_x_queue.sh, run_ms_queue.sh, run_n50_queue.sh   RG-DDPM / budget variant, misspecification, n=50
+run_x_queue.sh, run_ms_queue.sh, run_n50_queue.sh   RG-DDPM / ablations / budget variant, misspecification, n=50
 run_libero_all_tasks.sh     policy training
 ~~
 
@@ -84,6 +98,8 @@ The matching LIBERO demo file is `<suite>/<task>_demo.hdf5` (same name as the bd
 ./run_main_sweeps.sh                          # all main sweeps -> results/
 ./run_x_queue.sh rg locked range:0            # RG-DDPM
 ./run_x_queue.sh prio_b015 range:2            # Priority IK + motion budget (appendix)
+./run_x_queue.sh prio_rev locked              # ablation: orientation-first priority
+./run_x_queue.sh rg_prio locked               # ablation: RG-DDPM sampling + Priority IK execution
 ./run_ms_queue.sh none rs050:range:0 rs150:range:0 lop010:locked lom010:locked   # misspecified faults
 ./run_n50_queue.sh                            # fresh-seed n=50 replication
 # Layer-1 kinematic analysis (writes analysis_out/layer1_v2.csv; part (A) already fixed the B-IK weights)
@@ -93,6 +109,7 @@ docker compose -f docker/docker-compose.libero.yml run --rm -v $PWD/analysis_out
 python scripts_paper/make_paper_figures.py --results results --out paper
 # unit tests (container)
 docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/docker/tests/test_ik_priority.py
+docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/docker/tests/test_ik_priority_rev.py
 ~~
 
 Results (`results/`) are not tracked; every number in `paper/` is regenerated from them.

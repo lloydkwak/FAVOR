@@ -4,6 +4,8 @@ Usage: python run_libero_fault_sweep_x.py <method> <task> locked
        python run_libero_fault_sweep_x.py <method> <task> range <level_idx>
 method: rg          -> RGNativeJointPolicy (default RGConfig, exec IK pose weights)
         prio_b015   -> PrioIKPolicy (lam2=0.2) with motion budget 0.15 (ik_priority_budget)
+        rg_prio     -> RG-DDPM sampling, execution IK = Priority IK (lam2=0.2) instead of B-IK pose
+        prio_rev    -> Priority IK with the task order reversed: orientation first, position 2nd
 Output: results/libero_fault_sweep_{locked|range}_<method>/<same file names as other sweeps>
 """
 import sys, os, json
@@ -14,12 +16,26 @@ import favor_fault_runner  # noqa: F401
 from favor_fault_runner import FaultRobomimicImageRunner
 
 method, task_name, fault = sys.argv[1], sys.argv[2], sys.argv[3]
-assert method in ("rg", "prio_b015"), method
+assert method in ("rg", "prio_b015", "rg_prio", "prio_rev"), method
 assert fault in ("locked", "range"), fault
 
 if method == "rg":
     from native_joint_policy_rg import RGNativeJointPolicy, summarize_rg_log as summarize
     def make_policy(base, **kw): return RGNativeJointPolicy(base, **kw)
+elif method == "rg_prio":
+    import native_joint_policy_rg as npr
+    from ik_priority import ik_priority
+    def _exec_prio(kin, q_target, joint_idx, q_con, **kw):      # replaces B-IK at the execution boundary
+        return ik_priority(kin, q_target, joint_idx, q_con, lam2=0.2)
+    npr.ik_redistribute = _exec_prio
+    summarize = npr.summarize_rg_log
+    def make_policy(base, **kw): return npr.RGNativeJointPolicy(base, **kw)
+elif method == "prio_rev":
+    import native_joint_policy_prio as npp
+    from ik_priority_rev import ik_priority_rev
+    npp.ik_priority = ik_priority_rev
+    summarize = npp.summarize_prio_log
+    def make_policy(base, **kw): return npp.PrioIKPolicy(base, lam2=0.2, **kw)
 else:
     import native_joint_policy_prio as npp
     from ik_priority_budget import ik_priority_budget
