@@ -1,6 +1,6 @@
 """
 Verifies eci_conditional_sample enforces fault constraints in its final
-output, now under the ALL-JOINTS-clipped design (redesigned this session):
+output, now under the ALL-JOINTS-clipped design (redesigned):
 fault_spec gives per-joint q_lo/q_hi (and optionally v_max/q_anchor) for
 ALL 7 joints, with healthy joints given their full physical range.
 """
