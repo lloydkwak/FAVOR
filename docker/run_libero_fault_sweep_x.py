@@ -4,7 +4,7 @@ Usage: python run_libero_fault_sweep_x.py <method> <task> locked
        python run_libero_fault_sweep_x.py <method> <task> range <level_idx>
 method: rg          -> RGNativeJointPolicy (default RGConfig, exec IK pose weights)
         prio_b015   -> PrioIKPolicy (lam2=0.2) with motion budget 0.15 (ik_priority_budget)
-        rg_prio     -> RG-DDPM sampling, execution IK = Priority IK (lam2=0.2) instead of B-IK pose
+        rg_prio     -> RG-DDPM sampling, execution IK = Priority IK (lam2=0.2) instead of W-IK pose
         prio_rev    -> Priority IK with the task order reversed: orientation first, position 2nd
 Output: results/libero_fault_sweep_{locked|range}_<method>/<same file names as other sweeps>
 """
@@ -25,7 +25,7 @@ if method == "rg":
 elif method == "rg_prio":
     import native_joint_policy_rg as npr
     from ik_priority import ik_priority
-    def _exec_prio(kin, q_target, joint_idx, q_con, **kw):      # replaces B-IK at the execution boundary
+    def _exec_prio(kin, q_target, joint_idx, q_con, **kw):      # replaces W-IK at the execution boundary
         return ik_priority(kin, q_target, joint_idx, q_con, lam2=0.2)
     npr.ik_redistribute = _exec_prio
     summarize = npr.summarize_rg_log

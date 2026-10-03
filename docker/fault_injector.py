@@ -56,7 +56,7 @@ class FaultInjector(gym.Wrapper):
     def get_current_qpos(self):
         """Public RPC-able getter for the robot's ACTUAL current joint
         configuration (all 7 joints), regardless of fault state. Needed so
-        FavorHybridImagePolicy can seed its q_ref continuity anchor with the
+        the IK policy wrappers can seed its q_ref continuity anchor with the
         real robot pose at episode start, instead of an arbitrary zero
         vector -- the latter actively hurt IK once joint-space regularization
         was introduced (confirmed empirically: waypoint-0 pos_err jumped

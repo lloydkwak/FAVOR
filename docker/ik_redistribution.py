@@ -1,5 +1,5 @@
 """
-B-IK baseline: model-based kinematic redistribution applied AFTER sampling.
+W-IK baseline: model-based kinematic redistribution applied AFTER sampling.
 
 The policy's sampled joint targets define the intended end-effector pose
 (FK, position + orientation). The faulted joint is fixed to its admissible

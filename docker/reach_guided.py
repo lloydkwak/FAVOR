@@ -14,7 +14,7 @@ as a new robot model (locked joint = fixed joint, range fault = narrowed limits)
     reachable pose y', re-expressed in the healthy chart by 7-joint IK regularized
     to x0_hat, and injected by rewriting the epsilon prediction so that the
     scheduler's DDPM step uses the corrected x0.
-Execution boundary (in the policy wrapper): final chunk -> faulty IK (= B-IK).
+Execution boundary (in the policy wrapper): final chunk -> faulty IK (= W-IK).
 """
 import torch
 from ik_redistribution import rotvec_from_matrix, PANDA_Q_LO, PANDA_Q_HI
@@ -25,7 +25,7 @@ class RGConfig:
                  tol_pos=0.003, tol_rot=0.035, reg_f=0.01, dq_max=0.3, iters_b=5):
         # dq_max: 'reachable' = reachable WITHOUT moving the healthy joints more than
         # dq_max (j1/j3 need ~0.12-0.2 rad, j6/j7 0.4-1.0 rad offline); larger
-        # compensations are what made B-IK-pose fail on j6/j7, so those intentions
+        # compensations are what made W-IK-pose fail on j6/j7, so those intentions
         # are treated as unreachable and re-planned in the healthy chart.
         # reg_f: reachability test only -- must be ~unregularized, otherwise truly
         # reachable poses stop short (~3 mm / 3 deg at reg=0.1) and get flagged.

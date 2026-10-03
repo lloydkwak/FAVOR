@@ -5,10 +5,10 @@ and render_qualitative.py checks the outcome against these JSONs).
 
 A seed qualifies for a scenario when Priority IK succeeds and B1 and the contrast
 baseline(s) fail on that exact seed. Among those, representative seeds are preferred:
-B-IK pos and B-IK pose succeed or fail there as they do on most seeds of the condition
+W-IK pos and W-IK pose succeed or fail there as they do on most seeds of the condition
 (so a baseline that usually works is not shown failing).
-  A  distal   (J6, J7)  contrast: B-IK pose, preferred Bowl-Stove J7
-  B  proximal (J1, J3)  contrast: B-IK pos
+  A  distal   (J6, J7)  contrast: W-IK pose, preferred Bowl-Stove J7
+  B  proximal (J1, J3)  contrast: W-IK pos
   C  video only: best remaining (task, joint) on another task, every baseline fails
 Seeds from the earliest chunk are preferred: the re-run only needs chunks up to the seed's
 (seeds 10000+5k .. 10000+5k+4 form chunk k).
@@ -66,7 +66,7 @@ def main():
             ep = r["ep"]
             good = [s for s in r["seeds"] if ep["prio"][s] >= 1 and ep["b1"][s] < 1
                     and all(ep[c][s] < 1 for c in sp["contrast"])]
-            # representative: B-IK pos / pose behave on this seed as they do on most seeds of the condition
+            # representative: W-IK pos / pose behave on this seed as they do on most seeds of the condition
             strict = [s for s in good if all((ep[m][s] >= 1) == (r["mean"][m] >= 0.5) for m in ("pos", "pose"))]
             if not good:
                 continue

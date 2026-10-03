@@ -30,12 +30,12 @@ METHODS = {
     "select":   ("Select ($\\epsilon$-cert.)",     "libero_fault_sweep_phase2_select",   "libero_fault_sweep_range_select"),
     "eci":      ("E-C-I (projection)",   "libero_fault_sweep_eci",             "libero_fault_sweep_range_eci"),
     "rg":       ("RG-DDPM (guidance)",   "libero_fault_sweep_locked_rg",       "libero_fault_sweep_range_rg"),
-    "pos":      ("B-IK pos",             "libero_fault_sweep_locked_ik",       "libero_fault_sweep_range_ik"),
-    "pose":     ("B-IK pose",            "libero_fault_sweep_locked_ik_pose",  "libero_fault_sweep_range_ik_pose"),
-    "prio":     ("Priority IK (ours)",   "libero_fault_sweep_locked_prio",     "libero_fault_sweep_range_prio"),
+    "pos":      ("W-IK pos",             "libero_fault_sweep_locked_ik",       "libero_fault_sweep_range_ik"),
+    "pose":     ("W-IK pose",            "libero_fault_sweep_locked_ik_pose",  "libero_fault_sweep_range_ik_pose"),
+    "prio":     ("Priority IK",   "libero_fault_sweep_locked_prio",     "libero_fault_sweep_range_prio"),
 }
 SHORT = {"b1": "B1", "random_n": "Rand-N", "select": "Select", "eci": "E-C-I", "rg": "RG-DDPM",
-         "pos": "B-IK pos", "pose": "B-IK pose", "prio": "\\textbf{Prio-IK}"}
+         "pos": "W-IK pos", "pose": "W-IK pose", "prio": "\\textbf{Prio-IK}"}
 COLOR = {"b1": "#9E9C9C", "random_n": "#CFCFCF", "select": "#B8C4D9", "eci": "#163A78", "rg": "#5B7DB8",
          "pos": "#E39A9E", "pose": "#F2C4C6", "prio": "#B4131C", "best": "#5A5A5A"}
 MS = {  # robustness to misspecified fault knowledge (Priority IK); table order
@@ -50,7 +50,7 @@ MS = {  # robustness to misspecified fault knowledge (Priority IK); table order
 FIG_MS = {"rs050": "window\n$\\times$0.5", "rs150": "window\n$\\times$1.5",   # bar figure: main variants only
           "lop010": "lock\n+0.1 rad", "lom010": "lock\n$-$0.1 rad"}             # (angle sweep -> Fig 6)
 N50_METHODS = ["b1", "ik", "ik_pose", "prio"]
-N50_LABEL = {"b1": "B1", "ik": "B-IK pos", "ik_pose": "B-IK pose", "prio": "Priority IK"}
+N50_LABEL = {"b1": "B1", "ik": "W-IK pos", "ik_pose": "W-IK pose", "prio": "Priority IK"}
 
 plt.rcParams.update({"font.size": 8, "axes.titlesize": 9, "axes.labelsize": 8, "legend.fontsize": 7,
                      "xtick.labelsize": 7, "ytick.labelsize": 7, "pdf.fonttype": 42, "ps.fonttype": 42,
@@ -233,7 +233,7 @@ def main():
 
     # Table 1: main results
     cols = [m for m in METHODS if any((lv, m) in means for lv in LEVELS)]
-    header = ["Fault level"] + [SHORT[m] for m in cols] + ["Best B-IK$^\\dagger$"]
+    header = ["Fault level"] + [SHORT[m] for m in cols] + ["Best W-IK$^\\dagger$"]
     trows = []
     for level in LEVELS:
         row = [level]
@@ -257,14 +257,14 @@ def main():
     trows.append(allrow)
     write_table(OUT, "tab_main", header, trows,
                 "Mean success rate over 28 conditions (4 tasks $\\times$ 7 joints, $n{=}20$ episodes, identical seeds) "
-                "per fault level. $^\\dagger$Best B-IK picks, per condition, the better B-IK setting after seeing the "
+                "per fault level. $^\\dagger$Best W-IK picks, per condition, the better W-IK setting after seeing the "
                 "results. Superscripts give the number of conditions when fewer than 28 were run.", "tab:main")
     report.append("tab_main")
 
     # Table 2: paired tests Priority IK vs others
     if any(k[3] == "prio" for k in data):
         comp = [m for m in ["b1", "eci", "rg", "pos", "pose"] if m in have] + ["best"]
-        header = ["Fault level"] + [("vs " + (SHORT[m] if m != "best" else "Best B-IK$^\\dagger$")) for m in comp]
+        header = ["Fault level"] + [("vs " + (SHORT[m] if m != "best" else "Best W-IK$^\\dagger$")) for m in comp]
         trows, tot = [], {m: [0, 0] for m in comp}
         for level in LEVELS:
             row = [level]
@@ -365,7 +365,7 @@ def main():
         ax.plot(range(4), ys, marker="o", ms=3, lw=1.6 if m == "prio" else 1.0, color=COLOR[m], label=METHODS[m][0])
     if all((lv, "best") in means for lv in LEVELS):
         ax.plot(range(4), [means[(lv, "best")][0] for lv in LEVELS], ls="--", lw=0.9, color=COLOR["best"],
-                label="Best B-IK (per condition)")
+                label="Best W-IK (per condition)")
     ax.set_xticks(range(4)); ax.set_xticklabels(["Mild", "Moderate", "Severe", "Locked"])
     ax.set_ylabel("Mean success rate"); ax.set_ylim(0, 0.9)
     ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
@@ -475,8 +475,8 @@ def main():
            ("prio_rev", "Orientation-first priority", "task order reversed", "libero_fault_sweep_locked_prio_rev"),
            ("rg_prio", "RG-DDPM + Priority IK", "sampling-time guidance added", "libero_fault_sweep_locked_rg_prio"),
            ("rg", "RG-DDPM", "guidance + weighted IK (pose)", None),
-           ("pose", "B-IK pose", "weighted IK, $w_r{=}1.0$", None),
-           ("pos", "B-IK pos", "weighted IK, $w_r{=}0.05$", None)]
+           ("pose", "W-IK pose", "weighted IK, $w_r{=}1.0$", None),
+           ("pos", "W-IK pos", "weighted IK, $w_r{=}0.05$", None)]
     JA = [1, 3, 5, 6, 7]
     def rec_of(m, d, t, j):
         return load(os.path.join(R, d, fname("locked", t, j))) if d else data.get(("locked", t, j, m))

@@ -1,5 +1,5 @@
 """RGNativeJointPolicy: reachability-guided sampling in the healthy chart
-(reach_guided.py) + faulty-robot IK at the execution boundary (= B-IK, pose
+(reach_guided.py) + faulty-robot IK at the execution boundary (= W-IK, pose
 weights by default). Separate file: baselines' modules are untouched."""
 import torch
 import sys

@@ -1,5 +1,5 @@
 """
-(A) Choose B-IK (rot_weight, reg) from KINEMATICS ONLY, by a rule fixed in advance:
+(A) Choose W-IK (rot_weight, reg) from KINEMATICS ONLY, by a rule fixed in advance:
     among combos whose p95 of max|dq_free| <= 1.0 rad, minimize mean
     eps = pos_err + 0.05 * rot_err (the certificate/Layer1 metric),
     over 4 tasks x 7 joints x {locked, moderate}, 10 demos, every 4th waypoint.
@@ -7,7 +7,7 @@
 (B) Layer1 v2 with the chosen IK: 4 tasks x 7 joints x {locked, mild, moderate,
     severe}, all demos, every 4th waypoint. Per condition:
       override_* : EE error if the fault only overrides the joint (what B1 executes)
-      ik_*       : EE error left after B-IK redistribution (best a model-based fix reaches)
+      ik_*       : EE error left after W-IK redistribution (best a model-based fix reaches)
 """
 import sys, re, ast, csv, pathlib, itertools, h5py, numpy as np, torch
 sys.path.insert(0, "/workspace/docker")

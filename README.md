@@ -1,9 +1,13 @@
-# FAVOR: Training-Free Fault Adaptation of Diffusion Policies
+# FAVOR: Fault-Aware Visuomotor Policy Adaptation via Ordered Retargeting
+
+Training-free adaptation of a pretrained diffusion policy to a robot with a failed joint: the policy's
+intended end-effector motion is retargeted onto the healthy joints in a fixed order, position first and
+orientation only in the remaining null space.
 
 **Where, and how, should a pretrained robot policy be corrected when one of its joints fails?**
 
 A joint-space Diffusion Policy is trained on a healthy Franka Panda. At test time one joint is
-locked, or its range of motion shrinks. Without retraining, FAVOR compares every place in the
+locked, or its range of motion shrinks. Without retraining, this study compares every place in the
 inference loop where a correction can be inserted: during denoising, by selecting among samples,
 and after sampling. The answer turned out to depend less on *where* the correction acts than on
 *how* it splits the unavoidable error: restoring the end-effector **position first** and fixing
@@ -50,7 +54,7 @@ The policy outputs a chunk of joint targets $q^\star$, which the faulted robot c
 | sample selection | **Random-N**, **Select** | draw N=32 samples; pick at random or by a feasibility certificate | `native_joint_policy.py`, `fault_certificate.py` |
 | during denoising | **E-C-I** | project each denoising step onto the fault constraint | `joint_eci_projector.py` |
 | during denoising | **RG-DDPM** | reachability-guided sampling | `reach_guided.py`, `native_joint_policy_rg.py` |
-| after sampling | **B-IK pos / pose** | weighted IK on the 6 healthy joints toward the end-effector pose implied by $q^\star$ | `ik_redistribution.py` |
+| after sampling | **W-IK pos / pose** | weighted IK on the 6 healthy joints toward the end-effector pose implied by $q^\star$ | `ik_redistribution.py` |
 | after sampling | **Priority IK** (ours) | the same retargeting with a strict task priority | `ik_priority.py`, `native_joint_policy_prio.py` |
 
 **Priority IK.** The target is the pose the policy intended, $x^\star = \mathrm{FK}(q^\star)$. The faulted joint is held at its lock angle, and only the healthy joints move. With the damped pseudo-inverse $A^{+\lambda} = A^\top (A A^\top + \lambda^2 I)^{-1}$, each iteration takes
@@ -66,13 +70,17 @@ $$
 
 The orientation term can only use motions that leave the position unchanged. Unlike weighted IK, it can never trade position error for orientation error.
 
+Task-priority IK itself is classical (Nakamura et al., 1987; Siciliano & Slotine, 1991). What this
+repository contributes is the systematic comparison showing that this correction, with position first,
+is the right one for a faulted joint under a pretrained policy, and the analysis of why.
+
 ## Results
 
 All numbers are success rates over the same 20 test seeds (10000–10019) for every method. Comparisons are paired per episode (McNemar).
 
 ### Main comparison (4 tasks × 7 joints per fault level)
 
-| Fault level | B1 | Random-N | Select | E-C-I | RG-DDPM | B-IK pos | B-IK pose | **Priority IK** | Best B-IK† |
+| Fault level | B1 | Random-N | Select | E-C-I | RG-DDPM | W-IK pos | W-IK pose | **Priority IK** | Best W-IK† |
 |---|---|---|---|---|---|---|---|---|---|
 | mild | 0.66 | 0.64 | – | 0.70 | – | **0.75** | 0.70 | 0.70 | 0.77 |
 | moderate | 0.42 | 0.39 | 0.42 | 0.44 | 0.58 | 0.59 | 0.51 | **0.64** | 0.65 |
@@ -80,7 +88,7 @@ All numbers are success rates over the same 20 test seeds (10000–10019) for ev
 | locked | 0.11 | 0.12 | 0.16 | 0.19 | 0.31 | 0.30 | 0.32 | **0.48** | 0.43 |
 | all 112 | 0.37 | 0.35 | – | 0.41 | – | 0.52 | 0.48 | **0.60** | 0.60 |
 
-† Best B-IK picks the better of B-IK pos and B-IK pose for each condition after seeing the results. It is a reference, not an upper bound. Over all 112 conditions Priority IK beats B-IK pos 373:199 (p = 3e-13) and B-IK pose 408:137 (p = 3e-32), and ties Best B-IK (231:225).
+† Best W-IK picks the better of W-IK pos and W-IK pose for each condition after seeing the results. It is a reference, not an upper bound. Over all 112 conditions Priority IK beats W-IK pos 373:199 (p = 3e-13) and W-IK pose 408:137 (p = 3e-32), and ties Best W-IK (231:225).
 
 <p align="center"><img src="paper/figs/fig_methods_by_level.png" width="95%" alt="Success rate per fault level"></p>
 
@@ -93,8 +101,8 @@ Corrections applied after sampling dominate those applied during denoising. Amon
   <img src="paper/figs/fig_severity_curves.png" width="48%" alt="Success vs fault severity">
 </p>
 
-- **Distal faults (J6, J7):** position and orientation conflict. B-IK pose gives up centimetres of position to fix orientation and fails (0.07 / 0.05). B-IK pos keeps position but ignores orientation.
-- **Proximal faults (J1, J3):** the trade-off reverses, and B-IK pos fails.
+- **Distal faults (J6, J7):** position and orientation conflict. W-IK pose gives up centimetres of position to fix orientation and fails (0.07 / 0.05). W-IK pos keeps position but ignores orientation.
+- **Proximal faults (J1, J3):** the trade-off reverses, and W-IK pos fails.
 - **Priority IK** handles both with one setting (J1 0.80, J3 0.88, J6 0.53, J7 0.39).
 - **J2 and J4** (shoulder and elbow pitch) cannot be compensated by any method when locked.
 
@@ -116,14 +124,14 @@ Corrections applied after sampling dominate those applied during denoising. Amon
 | Orientation-first priority | task order reversed | 0.28 | 0.14 | 0.39 | 74 : 26 (p = 1.7e-6) |
 | RG-DDPM + Priority IK | sampling-time guidance added | 0.23 | 0.05 | 0.37 | 86 : 27 (p = 2.3e-8) |
 | RG-DDPM | guidance + weighted IK (pose) | 0.11 | 0.05 | 0.31 | 124 : 30 (p = 8.9e-15) |
-| B-IK pose | weighted IK | 0.07 | 0.05 | 0.32 | 120 : 31 (p = 1.5e-13) |
+| W-IK pose | weighted IK | 0.07 | 0.05 | 0.32 | 120 : 31 (p = 1.5e-13) |
 
 - **Reversed order:** reversing the priority costs most where position and orientation conflict (J6, J7).
 - **Added guidance:** guidance inside the sampler hurts even with Priority IK at execution. RG-DDPM's internal correction is itself a weighted pose IK, so it bakes the J6/J7 trade-off into the trajectory before the post-hoc step can undo it.
 
 ### Fresh-seed replication (n = 50, seeds 10020–10069)
 
-| Condition | B1 | B-IK pos | B-IK pose | **Priority IK** |
+| Condition | B1 | W-IK pos | W-IK pose | **Priority IK** |
 |---|---|---|---|---|
 | Soup J1 | 0.00 | 0.16 | 0.46 | **0.84** |
 | Bowl-Ramekin J6 | 0.18 | 0.40 | 0.00 | **0.62** |
@@ -133,7 +141,7 @@ Corrections applied after sampling dominate those applied during denoising. Amon
 | Milk J6 | 0.00 | **0.38** | 0.34 | 0.28 |
 | Milk J7 | 0.26 | **0.50** | 0.00 | 0.44 |
 
-The pattern holds on unseen seeds: Priority IK is best on 5 of 7 conditions. The two exceptions are Milk J6, where the intended pose is not reachable with the joint locked (IK residual > 24 mm for every method), and Milk J7, a statistical tie with B-IK pos (10 : 13, p = 0.68).
+The pattern holds on unseen seeds: Priority IK is best on 5 of 7 conditions. The two exceptions are Milk J6, where the intended pose is not reachable with the joint locked (IK residual > 24 mm for every method), and Milk J7, a statistical tie with W-IK pos (10 : 13, p = 0.68).
 
 ### Robustness to a wrong fault description
 
@@ -171,8 +179,8 @@ docker/                       environment (Dockerfile.libero, compose) and all m
   assets/franka_panda.urdf      Panda kinematics used by every IK method (FK matches the sim to ~1 mm)
   fault_injector.py             locked / range_reduced / velocity_limited faults in MuJoCo
   favor_fault_runner.py         LIBERO rollout runner with fault injection and per-episode logging
-  native_joint_policy*.py       policy wrappers: B1, Select, Random-N, E-C-I, B-IK, Priority IK, RG-DDPM, misspecification
-  ik_redistribution.py          weighted IK (B-IK)
+  native_joint_policy*.py       policy wrappers: B1, Select, Random-N, E-C-I, W-IK, Priority IK, RG-DDPM, misspecification
+  ik_redistribution.py          weighted IK (W-IK)
   ik_priority.py                Priority IK; ik_priority_rev.py = orientation-first ablation
   render_recorder.py            optional recorder for qualitative media (does not change what the policy sees)
   render_qualitative.py         re-runs selected sweep episodes with rendering on and checks them against the sweep

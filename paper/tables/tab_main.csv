@@ -1,4 +1,4 @@
-Fault level,B1,Rand-N,Select,E-C-I,RG-DDPM,B-IK pos,B-IK pose,\textbf{Prio-IK},Best B-IK$^\dagger$
+Fault level,B1,Rand-N,Select,E-C-I,RG-DDPM,W-IK pos,W-IK pose,\textbf{Prio-IK},Best W-IK$^\dagger$
 mild,0.66,0.64,--,0.70,--,\textbf{0.75},0.70,0.70,0.77
 moderate,0.42,0.39,0.42,0.44,0.58,0.59,0.51,\textbf{0.64},0.65
 severe,0.28,0.26,--,0.31,--,0.45,0.39,\textbf{0.58},0.54

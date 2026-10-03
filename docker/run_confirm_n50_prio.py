@@ -1,7 +1,7 @@
 """
 Fresh-seed replication (n=50, seeds 10020-10069) for the Priority-IK main claim.
 Usage: python run_confirm_n50_prio.py <task>
-Runs, for every selected locked condition of <task>: b1, ik (B-IK pos), ik_pose (B-IK pose), prio.
+Runs, for every selected locked condition of <task>: b1, ik (W-IK pos), ik_pose (W-IK pose), prio.
 Output: results/libero_confirm_n50_fresh/<task>_<joint>_locked_<method>_n50.json  (SKIP if exists)
 """
 import sys, os, json

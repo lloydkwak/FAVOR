@@ -90,6 +90,6 @@ check("velocity_limited", fault_vel, vel_ok)
 
 # 4) all-healthy (full range on every joint): should be a numerically exact
 # identity operation -- the key new invariant this redesign is meant to
-# guarantee (this is what makes vacuous B1-vs-FAVOR comparisons valid).
+# guarantee (this is what makes vacuous B1-vs-E-C-I comparisons valid).
 fault_healthy = {'q_lo': FULL_LO, 'q_hi': FULL_HI}
 check("all_healthy_identity", fault_healthy, lambda q: True)  # sanity: just confirm it runs

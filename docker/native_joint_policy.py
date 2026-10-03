@@ -5,7 +5,7 @@ Joint-space policy wrapper for the baselines and the sample-level interventions:
   mode='eci'       E-C-I: project the faulted joint onto its admissible range at every denoising step
   mode='random_n'  draw N candidates, keep one at random (control for 'select')
   mode='select'    draw N candidates, keep the one with the smallest EE discrepancy (fault_certificate.py)
-  mode='ik'        B-IK: weighted damped-least-squares IK on the executed waypoints (ik_redistribution.py)
+  mode='ik'        W-IK: weighted damped-least-squares IK on the executed waypoints (ik_redistribution.py)
 
 Deterministic seeding: every predict_action call is seeded from (episode, call) counters, so all
 methods draw identical noise and episodes can be compared pairwise across methods.
@@ -100,7 +100,7 @@ class NativeJointPolicy:
         # is to beat this, not just to beat single-sample B1.
         self._random_n_gen = torch.Generator()
 
-        # 'ik' (B-IK baseline): see ik_redistribution.py
+        # 'ik' (W-IK baseline): see ik_redistribution.py
         self.ik_overrides = dict(ik_overrides or {})  # empty -> ik_redistribution module defaults
         self.ik_log = []
 
@@ -341,7 +341,7 @@ class NativeJointPolicy:
                 v_max=fault_spec.get('v_max'), q_anchor=fault_spec.get('q_anchor'))
 
         if fault_spec is not None and self.mode == 'ik':
-            # B-IK: same sample as B1 (this branch sampled exactly like B1
+            # W-IK: same sample as B1 (this branch sampled exactly like B1
             # above), then keep the intended EE pose (FK of the targets), fix
             # the faulted joint to its admissible value and re-solve the 6
             # healthy joints by damped least-squares IK. Only the waypoints

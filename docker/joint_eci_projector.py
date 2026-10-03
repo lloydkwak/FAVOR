@@ -10,7 +10,7 @@ should need to know about specially -- in deployment, any joint could be
 the one that's actually faulted, so the constraint is applied per-joint
 across the board, using each joint's own valid range. A healthy joint's
 range is simply its full physical range, making the projection an
-identity operation for that joint (verified: this is why B1 and FAVOR
+identity operation for that joint (verified: this is why B1 and E-C-I
 matched exactly under a vacuous/full-range test, once the
 earlier normalized-vs-physical-units clamp bug was also fixed). A faulted
 joint's range is narrowed (locked = zero-width range at q_lock,
