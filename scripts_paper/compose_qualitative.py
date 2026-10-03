@@ -29,7 +29,7 @@ TASK_DESC = {"alphabet_soup": "pick the alphabet soup and place it in the basket
              "milk": "pick the milk and place it in the basket",
              "bowl_ramekin": "pick the black bowl between the plate and the ramekin, place it on the plate",
              "bowl_stove": "pick the black bowl on the stove and place it on the plate"}
-LABEL = {"b1": "B1 (no intervention)", "pos": "B-IK pos", "pose": "B-IK pose", "prio": "Priority IK (ours)",
+LABEL = {"b1": "B1 (no intervention)", "pos": "W-IK pos", "pose": "W-IK pose", "prio": "Priority IK",
          "rg": "RG-DDPM"}
 COLOR = {"b1": "#9E9C9C", "rg": "#5B7DB8", "pos": "#E39A9E", "pose": "#F2C4C6", "prio": "#B4131C"}
 LINE = {"b1": "#8A8A8A", "rg": "#3E64A8", "pos": "#E07A80", "pose": "#C98A8E", "prio": "#B4131C"}  # paths on images
@@ -492,7 +492,7 @@ def main():
                             ("same seed and same policy samples for every method", 25, False, grey),
                             ("", 14, False, dark),
                             ("B1: policy output sent as is", 25, False, grey),
-                            ("B-IK pos / pose: weighted IK on the healthy joints", 25, False, grey),
+                            ("W-IK pos / pose: weighted IK on the healthy joints", 25, False, grey),
                             ("Priority IK: position first, orientation in its null space", 25, True,
                              hex2rgb(COLOR["prio"]))]), FPS * 6)
         if snaps:
