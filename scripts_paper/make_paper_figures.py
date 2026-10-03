@@ -187,7 +187,10 @@ def layer1(data, path, OUT, report):
         ax.set_xscale("log"); ax.set_xlabel(xl); ax.set_ylabel(yl); ax.set_ylim(-0.03, 1.03)
         ax.set_title(f"Spearman $\\rho$ = {rho:.2f}  (n={len(xs)})")
         ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
-    axs[0].legend(frameon=False, fontsize=6, loc="lower left")
+    h, l = axs[0].get_legend_handles_labels()   # one shared legend above the panels, clear of the data
+    fig.legend(h, l, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=len(l), frameon=False, fontsize=7,
+               markerscale=1.6, handletextpad=0.2, columnspacing=1.2, title="Fault level", title_fontsize=7)
+    fig.tight_layout()
     savefig(fig, OUT, "fig_layer1"); report.append("fig_layer1")
     write_table(OUT, "tab_layer1", ["Predictor", "Outcome", "n", "Spearman $\\rho$"],
                 [["override EE error", "B1 success", len(x1), f"{rho1:.2f}"],
