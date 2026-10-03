@@ -46,6 +46,11 @@ Left: Bowl-Stove, joint 7 locked. Right: Soup, joint 3 locked. Full video: <a hr
 | mild / moderate / severe | 75 / 50 / 25 % of that joint's median demonstrated excursion |
 | locked | none (0 %) |
 
+Implementation: after every control step (20 Hz) a locked joint's position is reset to the lock angle and its velocity
+set to zero; a range fault narrows the joint's MuJoCo limit (`jnt_range`) to the window. The joint-position controller
+uses kp = 150 (robosuite's default of 50 left a 0.2 rad steady-state error on LIBERO's floor-mounted Panda).
+Healthy (no-fault) success per task: `paper/tables/tab_nofault.csv`.
+
 The policy outputs a chunk of joint targets $q^\star$, which the faulted robot cannot follow exactly. The methods differ in where they intervene:
 
 | Where | Method | Idea | Code |
@@ -55,7 +60,7 @@ The policy outputs a chunk of joint targets $q^\star$, which the faulted robot c
 | during denoising | **E-C-I** | project each denoising step onto the fault constraint | `joint_eci_projector.py` |
 | during denoising | **RG-DDPM** | reachability-guided sampling | `reach_guided.py`, `native_joint_policy_rg.py` |
 | after sampling | **W-IK pos / pose** | weighted IK on the 6 healthy joints toward the end-effector pose implied by $q^\star$ | `ik_redistribution.py` |
-| after sampling | **Priority IK** (ours) | the same retargeting with a strict task priority | `ik_priority.py`, `native_joint_policy_prio.py` |
+| after sampling | **Priority IK** (position first) | the same retargeting with a strict task priority | `ik_priority.py`, `native_joint_policy_prio.py` |
 
 **Priority IK.** The target is the pose the policy intended, $x^\star = \mathrm{FK}(q^\star)$. The faulted joint is held at its lock angle, and only the healthy joints move. With the damped pseudo-inverse $A^{+\lambda} = A^\top (A A^\top + \lambda^2 I)^{-1}$, each iteration takes
 
@@ -88,11 +93,11 @@ All numbers are success rates over the same 20 test seeds (10000–10019) for ev
 | locked | 0.11 | 0.12 | 0.16 | 0.19 | 0.31 | 0.30 | 0.32 | **0.48** | 0.43 |
 | all 112 | 0.37 | 0.35 | – | 0.41 | – | 0.52 | 0.48 | **0.60** | 0.60 |
 
-† Best W-IK picks the better of W-IK pos and W-IK pose for each condition after seeing the results. It is a reference, not an upper bound. Over all 112 conditions Priority IK beats W-IK pos 373:199 (p = 3e-13) and W-IK pose 408:137 (p = 3e-32), and ties Best W-IK (231:225).
+† Best W-IK picks the better of W-IK pos and W-IK pose for each condition after seeing the results. It is a reference, not an upper bound. Over all 112 conditions the paired counts (Priority IK only : other only) are 373:199 against W-IK pos (p = 3e-13), 408:137 against W-IK pose (p = 3e-32) and 231:225 against Best W-IK (p = 0.81). Condition-level tests that do not treat episodes of different conditions as independent are in `paper/tables/tab_stats_condition.csv`.
 
 <p align="center"><img src="paper/figs/fig_methods_by_level.png" width="95%" alt="Success rate per fault level"></p>
 
-Corrections applied after sampling dominate those applied during denoising. Among the IK variants, Priority IK leads from moderate faults on. The one exception is mild faults on J2 and J4, where position-only IK is better.
+Selecting among samples does not address the fault, and denoising-time guidance (RG-DDPM) performs on par with post-hoc weighted IK. Priority IK has the highest mean from moderate faults on. Exceptions: J4 range faults at every level and J2 at the mild level, where position-only weighted IK is better (see Limitations).
 
 ### Which joint fails matters, and weighted IK has to guess
 
@@ -170,6 +175,7 @@ The policy itself is not the bottleneck; recovering the intended end-effector mo
 - **Simulation only.** All results are from LIBERO (robosuite/MuJoCo).
 - **Fault description assumed known.** As in prior fault-adaptation work, the faulted joint and its admissible range are given. Detecting and identifying the fault is out of scope.
 - **Lock angle must be precise.** Locked-joint performance depends on an accurate lock angle (see Robustness).
+- **J4 range faults.** Priority IK is below position-only weighted IK on J4 at every range level (mild 0.60 vs 0.84, moderate 0.40 vs 0.51, severe 0.11 vs 0.28), and on J2 at the mild level. `paper/analysis/j4_range.md` relates this to the kinematic residual and to how far each method moves the healthy joints.
 - **Unrecoverable faults.** Faults that remove a needed degree of freedom cannot be compensated by any training-free correction (locked J2/J4, Milk J6).
 
 ## Repository layout
@@ -185,12 +191,17 @@ docker/                       environment (Dockerfile.libero, compose) and all m
   render_recorder.py            optional recorder for qualitative media (does not change what the policy sees)
   render_qualitative.py         re-runs selected sweep episodes with rendering on and checks them against the sweep
   run_libero_fault_sweep_*.py   sweep runners (one JSON per condition, per-episode success)
+  run_libero_revision.py        revision runs: healthy success, W-IK w_r/rho sweep, order/damping and
+                                prioritized-guidance variants (reach_guided_prio.py); bench_latency.py = per-call timing
   sweep_grid_libero*.py         task / joint / severity grids and the fixed test seeds
   tests/                        unit tests (E-C-I projection, Priority IK, priority order)
 third_party/                  pinned upstream commits + patch to diffusion_policy (joint-space configs)
 scripts_libero/               LIBERO -> robomimic conversion, evaluation, severity design, kinematic analysis
 scripts_paper/                figures, tables, qualitative figures, video composition
 paper/figs, paper/tables      generated figures (PDF/PNG) and tables (LaTeX/CSV)
+paper/data                    every episode outcome (episodes.csv) and the kinematic analysis (layer1_v2.csv)
+paper/analysis                J4 range-fault analysis, Fig. 3 outlier list
+paper/multimedia              RA-L multimedia zip (video, ReadMe.txt, Summary.txt) and a <=10 MB video
 paper/video                   supplementary video, per-scenario videos, README previews
 run_*.sh                      training, sweeps, ablations, replication, qualitative media
 ```
@@ -235,6 +246,10 @@ docker compose -f docker/docker-compose.libero.yml run --rm -v $PWD/analysis_out
     python /workspace/scripts_libero/ik_select_and_layer1v2.py   # kinematic analysis -> analysis_out/layer1_v2.csv
 
 python scripts_paper/make_paper_figures.py --results results --out paper   # figures and tables (host: numpy + matplotlib)
+./run_revision_queue.sh                       # reviewer-requested runs: healthy success, W-IK w_r/rho sweep,
+                                              # order/damping and prioritized-guidance variants, latency, failure-case video
+python scripts_paper/revision_analysis.py --results results --out paper --glmm   # their tables, figure and analyses
+python scripts_paper/export_episodes.py       # every episode outcome -> paper/data/episodes.csv (+ layer1_v2.csv)
 ./run_qual_media.sh                           # qualitative figures + videos (re-renders sweep seeds, checks them)
 docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/scripts_paper/make_preview_gif.py --video /workspace/paper/video
 

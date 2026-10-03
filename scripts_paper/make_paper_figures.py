@@ -113,6 +113,13 @@ def mean_ci(v):
     return v.mean(), 1.96 * se
 
 
+def r2(x):
+    """Success rate to 2 decimals, round half up on the exact value (k/20 averages are exact
+    multiples of 1/80; float noise turned 0.425 into 0.42 and 0.075 into 0.07 before)."""
+    from decimal import Decimal, ROUND_HALF_UP
+    return str(Decimal(repr(round(float(x), 9))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def fmt_p(p):
     if p < 1e-3:
         e = int(np.floor(np.log10(p)))
@@ -242,16 +249,16 @@ def main():
         for m in cols:
             if (level, m) in means:
                 mu, _, n = means[(level, m)]
-                s = f"{mu:.2f}" + ("" if n == 28 else f"$^{{({n})}}$")
+                s = r2(mu) + ("" if n == 28 else f"$^{{({n})}}$")
                 row.append(f"\\textbf{{{s}}}" if top is not None and abs(mu - top) < 1e-9 else s)
             else:
                 row.append("--")
-        row.append(f"{means[(level, 'best')][0]:.2f}" if (level, "best") in means else "--")
+        row.append(r2(means[(level, 'best')][0]) if (level, "best") in means else "--")
         trows.append(row)
     allrow = ["all (112)"]
     for m in cols + ["best"]:
         if all((lv, m) in means and means[(lv, m)][2] == 28 for lv in LEVELS):
-            allrow.append(f"{np.mean([means[(lv, m)][0] for lv in LEVELS]):.2f}")
+            allrow.append(r2(np.mean([means[(lv, m)][0] for lv in LEVELS])))
         else:
             allrow.append("--")
     trows.append(allrow)
@@ -388,7 +395,7 @@ def main():
         if n and n < 20:
             print(f"  misspec {tag}: {n}/20 conditions done -> skipped until complete")
         if n == 20:
-            rrows.append([lab, level, n, f"{np.mean(ex_s):.2f}", f"{np.mean(ms_s):.2f}",
+            rrows.append([lab, level, n, r2(np.mean(ex_s)), r2(np.mean(ms_s)),
                           f"{np.mean(ms_s) - np.mean(ex_s):+.2f}", f"{b}:{c} ({fmt_p(mcnemar(b, c))})"])
             if tag in FIG_MS:
                 bars.append((FIG_MS[tag], np.mean(ex_s), np.mean(ms_s)))
@@ -456,7 +463,7 @@ def main():
                 continue
             row = [f"{TASK_LABEL.get(t, t)} J{j}"]
             for m in N50_METHODS:
-                row.append(f"{rec[m]['score']:.2f}" if rec[m] else "--")
+                row.append(r2(rec[m]['score']) if rec[m] else "--")
             P = rec["prio"]
             for m in ["ik", "ik_pose"]:
                 if P and rec[m] and P["pe"] and rec[m]["pe"]:
@@ -485,8 +492,8 @@ def main():
         recs = {(t, j): rec_of(m, d, t, j) for t in TASKS for j in JOINTS}
         if any(r is None or r["score"] is None for r in recs.values()):
             print(f"  ablation {m}: incomplete -> skipped"); continue
-        row = [lab, what] + [f"{np.mean([recs[(t, j)]['score'] for t in TASKS]):.2f}" for j in JA]
-        row.append(f"{np.mean([r['score'] for r in recs.values()]):.2f}")
+        row = [lab, what] + [r2(np.mean([recs[(t, j)]['score'] for t in TASKS])) for j in JA]
+        row.append(r2(np.mean([r['score'] for r in recs.values()])))
         if m == "prio":
             row.append("--")
         else:

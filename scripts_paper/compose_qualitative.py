@@ -221,55 +221,91 @@ def fig_traj(sc, eps, methods, out):
 
 
 def draw_schematic(ax, s, joint):
-    """Side-view kinematic sketch of the Panda from the simulator's joint anchors (initial pose)."""
+    """Side-view kinematic chain of the Panda at its initial pose, from the simulator's joint
+    anchors and axes. Every joint gets its own marker and label: a circle when its axis points
+    out of the drawing plane, a bar along the axis when the axis lies in the plane. Joints that
+    share an anchor in the simulator (J1/J2, J5/J6) are spread along the incoming link, where
+    an in-plane axis is drawn (J1 along the base column, J5 along the forearm)."""
     P = np.vstack([s["anchors"], np.asarray(s["ee"])[None]])
     d = P[:, :2] - P[0, :2]
     h = np.linalg.svd(d, full_matrices=False)[2][0] if np.linalg.norm(d) > 1e-6 else np.array([1.0, 0.0])
     if h @ (P[-1, :2] - P[0, :2]) < 0:
         h = -h
-    n = np.array([-h[1], h[0], 0.0])
+    nrm3 = np.array([-h[1], h[0], 0.0])
     X, Z = d @ h, P[:, 2]
     zb = Z[0] - 0.333                                  # base frame sits 0.333 m below joint 1
-    ax.add_patch(plt.Rectangle((X[0] - 0.07, zb - 0.06), 0.14, 0.06, fc="#D9D9D9", ec="#888888", lw=0.5))
-    ax.plot([X[0], X[0]], [zb, Z[0]], color="#BFBFBF", lw=5, solid_capstyle="round", zorder=1)
-    ax.plot(X, Z, color="#BFBFBF", lw=5, solid_capstyle="round", solid_joinstyle="round", zorder=1)
-    ax.plot(X[-1], Z[-1], marker="s", ms=4, color="#777777", zorder=3)
+    chain = np.vstack([[X[0], zb], np.stack([X, Z], 1)])    # base, J1..J7 anchors, EE
+    out_of_plane = [abs(np.asarray(s["axes"][i], float) @ nrm3) > 0.7 for i in range(7)]
+
+    # display positions: spread coincident anchors along the incoming link
+    D = np.stack([X[:7], Z[:7]], 1).copy()
+    i = 0
+    while i < 7:
+        g = [i]
+        while g[-1] + 1 < 7 and np.linalg.norm(D[g[-1] + 1] - D[i]) < 0.02:
+            g.append(g[-1] + 1)
+        if len(g) > 1:
+            prev = chain[i]                            # previous distinct point (base for J1)
+            movable = [k for k in g if not out_of_plane[k]] or g[:-1]
+            for r, k in enumerate(movable):
+                D[k] = D[i] + (0.45 - 0.15 * r) * (prev - D[i])
+        i = g[-1] + 1
+
+    ax.add_patch(plt.Rectangle((X[0] - 0.07, zb - 0.05), 0.14, 0.05, fc="#D9D9D9", ec="#888888", lw=0.5))
+    ax.plot(chain[:, 0], chain[:, 1], color="#C8C8C8", lw=5, solid_capstyle="round",
+            solid_joinstyle="round", zorder=1)
+    ax.plot(X[-1], Z[-1], marker="s", ms=4.5, color="#777777", zorder=3)
+    cen = chain.mean(0)
     for i in range(7):
-        col = COLOR["prio"] if i + 1 == joint else "black"
-        a = np.asarray(s["axes"][i], dtype=float)
-        if abs(a @ n) > 0.7:                           # axis out of the drawing plane: rotation shown in plane
-            ax.plot(X[i], Z[i], "o", ms=6.5, mfc="white", mec=col, mew=1.3, zorder=4)
-            ax.plot(X[i], Z[i], "o", ms=1.8, color=col, zorder=5)
-        else:                                          # axis in the plane: drawn as a short bar along it
-            v = np.array([a[:2] @ h, a[2]]); v = v / (np.linalg.norm(v) + 1e-9) * 0.035
-            ax.plot([X[i] - v[0], X[i] + v[0]], [Z[i] - v[1], Z[i] + v[1]], color=col, lw=3.2,
-                    solid_capstyle="butt", zorder=4)
-    groups = []                                        # coincident anchors share one label (e.g. J1/J2)
-    for i in range(7):
-        for g in groups:
-            if np.hypot(X[i] - X[g[0]], Z[i] - Z[g[0]]) < 0.02:
-                g.append(i); break
-        else:
-            groups.append([i])
-    groups.sort(key=lambda g: -(Z[g[0]] + 0.25 * (X[g[0]] - X.min())))  # right-hand anchors get the upper label: no crossing leaders
-    xl = X.max() + 0.16
-    zs = np.linspace(Z.max() + 0.02, zb + 0.05, len(groups))
-    for g, zl in zip(groups, zs):
-        hit = joint - 1 in g
+        hit = i + 1 == joint
         col = COLOR["prio"] if hit else "black"
-        lab = ", ".join(f"J{i + 1}" for i in g) + (" locked" if hit else "")
-        ax.annotate(lab, xy=(X[g[0]], Z[g[0]]), xytext=(xl, zl), fontsize=6.5, ha="left", va="center", color=col,
-                    fontweight="bold" if hit else "normal",
-                    arrowprops=dict(arrowstyle="-", lw=0.4, color=col, shrinkA=1, shrinkB=3))
+        a = np.asarray(s["axes"][i], dtype=float)
+        if out_of_plane[i]:
+            ax.plot(*D[i], "o", ms=6.5, mfc="white", mec=col, mew=1.3, zorder=4)
+            ax.plot(*D[i], "o", ms=1.8, color=col, zorder=5)
+        else:
+            v = np.array([a[:2] @ h, a[2]]); v = v / (np.linalg.norm(v) + 1e-9) * 0.035
+            ax.plot([D[i][0] - v[0], D[i][0] + v[0]], [D[i][1] - v[1], D[i][1] + v[1]], color=col, lw=3.4,
+                    solid_capstyle="butt", zorder=4)
+        # label: of eight directions, the one farthest from the other markers and the links
+        others = np.vstack([np.delete(D, i, 0), _densify(chain)])
+        best = None
+        for ang in np.linspace(0, 2 * np.pi, 16, endpoint=False):
+            u = np.array([np.cos(ang), np.sin(ang)])
+            pos = D[i] + 0.085 * u + np.array([0.03 * np.sign(u[0]), 0.0])   # text extends sideways
+            score = np.min(np.linalg.norm(others - pos, axis=1)) + 0.01 * (u @ (D[i] - cen))
+            if best is None or score > best[0]:
+                best = (score, pos, u)
+        _, pos, u = best
+        ax.text(*pos, f"J{i + 1}" + (" locked" if hit else ""), fontsize=6.5, color=col, zorder=6,
+                fontweight="bold" if hit else "normal",
+                ha="left" if u[0] > 0.3 else ("right" if u[0] < -0.3 else "center"), va="center")
     ax.set_aspect("equal")
-    ax.set_xlim(X.min() - 0.12, xl + 0.22); ax.set_ylim(zb - 0.09, Z.max() + 0.08)
+    x0, x1 = chain[:, 0].min() - 0.32, chain[:, 0].max() + 0.42
+    ax.set_xlim(x0, x1); ax.set_ylim(zb - 0.2, chain[:, 1].max() + 0.1)
+    for r, (txt, sym) in enumerate([("axis out of page", "o"), ("axis in page", "-")]):   # symbol key
+        ly = zb - 0.09 - 0.08 * r; lx = x1 - 0.42
+        if sym == "o":
+            ax.plot(lx, ly, "o", ms=5, mfc="white", mec="black", mew=1.0)
+            ax.plot(lx, ly, "o", ms=1.4, color="black")
+        else:
+            ax.plot([lx - 0.025, lx + 0.025], [ly, ly], color="black", lw=2.6, solid_capstyle="butt")
+        ax.text(lx + 0.05, ly, txt, fontsize=5.5, va="center")
     ax.axis("off")
+
+
+def _densify(chain, step=0.02):
+    pts = [chain[0]]
+    for a_, b_ in zip(chain[:-1], chain[1:]):
+        n = max(int(np.linalg.norm(b_ - a_) / step), 1)
+        pts += [a_ + (b_ - a_) * k / n for k in range(1, n + 1)]
+    return np.array(pts)
 
 
 def fig_setup(snaps, out, joint):
     tasks = [t for t in TASK_LABEL if t in snaps]
     fig, axs = plt.subplots(1, len(tasks) + 1, figsize=(7.16, 1.62),
-                            gridspec_kw=dict(wspace=0.04, width_ratios=[1] * len(tasks) + [1.05]))
+                            gridspec_kw=dict(wspace=0.04, width_ratios=[1] * len(tasks) + [1.3]))
     for ax, t in zip(axs, tasks):
         ax.imshow(snaps[t]["plain"]["img"]); ax.set_xticks([]); ax.set_yticks([])
         ax.set_title(TASK_LABEL[t], pad=2)
@@ -461,14 +497,14 @@ def main():
 
     figs = os.path.join(a.out, "figs")
     for sc, eps in loaded:
-        if sc["id"].startswith("C"):
+        if not sc.get("paper", sc["id"][0] in "AB"):
             continue
         shown = [m for m in ["b1", "pos", "pose", "prio"] if m in eps]
         fig_qual(sc, eps, shown, os.path.join(figs, f"fig_qual_{sc['id']}"), a.stride)
         fig_traj(sc, eps, [m for m in ["b1", "pos", "pose", "prio"] if m in eps],
                  os.path.join(figs, f"fig_qual_{sc['id']}_traj"))
 
-    paper_blocks = [(sc, eps) for sc, eps in loaded if not sc["id"].startswith("C")]
+    paper_blocks = [(sc, eps) for sc, eps in loaded if sc.get("paper", sc["id"][0] in "AB")]
     if paper_blocks:
         fig_qual_combined(paper_blocks, os.path.join(figs, "fig_qual"), a.stride)
 
@@ -502,8 +538,11 @@ def main():
             one = Writer(os.path.join(vids, f"{sc['id']}_2x2.mp4"), W, H)
             gen = tile_frames(sc, eps, ms)
             first = next(gen)
-            sup.put(card(W, H, [(f"{TASK_LABEL[sc['task']]}, joint {sc['joint']} locked", 40, True, dark),
-                                (TASK_DESC[sc["task"]], 24, False, grey)], bg=first), int(FPS * 1.5))
+            lines = [(f"{TASK_LABEL[sc['task']]}, joint {sc['joint']} locked", 40, True, dark),
+                     (TASK_DESC[sc["task"]], 24, False, grey)]
+            if sc.get("note"):
+                lines.append((sc["note"], 26, True, dark))
+            sup.put(card(W, H, lines, bg=first), int(FPS * (2.5 if sc.get("note") else 1.5)))
             sup.put(first); one.put(first)
             for fr in gen:
                 sup.put(fr); one.put(fr)
