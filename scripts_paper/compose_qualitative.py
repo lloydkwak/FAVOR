@@ -324,14 +324,22 @@ class Writer:
         print("wrote", self.path)
 
 
-def card(W, H, lines):
-    im = Image.new("RGB", (W, H), (255, 255, 255))
+def card(W, H, lines, bg=None):
+    """Centered text lines; on a dimmed video frame when bg is given. Long lines shrink to fit."""
+    if bg is None:
+        im = Image.new("RGB", (W, H), (255, 255, 255))
+    else:
+        im = Image.fromarray((np.asarray(bg[:H, :W], dtype=np.float32) * 0.35).astype(np.uint8))
     d = ImageDraw.Draw(im)
-    y = H * 0.36
+    fitted = []
     for text, size, bold, col in lines:
         f = font(size, bold)
-        w = d.textlength(text, font=f)
-        d.text(((W - w) / 2, y), text, font=f, fill=col)
+        while size > 12 and d.textlength(text, font=f) > W - 60:
+            size -= 1; f = font(size, bold)
+        fitted.append((text, size, f, col if bg is None else (255, 255, 255)))
+    y = (H - sum(sz * 1.6 for _, sz, _, _ in fitted)) / 2
+    for text, size, f, col in fitted:
+        d.text(((W - d.textlength(text, font=f)) / 2, y), text, font=f, fill=col)
         y += size * 1.6
     return np.array(im)
 
@@ -476,24 +484,28 @@ def main():
         methods = lambda eps: [m for m in ["b1", "pos", "pose", "prio"] if m in eps]
         W, H = 960, 1032
         sup = Writer(os.path.join(vids, "favor_supp.mp4"), W, H)
-        sup.put(card(W, H, [("Training-free fault adaptation", 40, True, (20, 20, 20)),
-                            ("of a joint-space diffusion policy", 40, True, (20, 20, 20)),
-                            ("", 20, False, (0, 0, 0)),
-                            ("one joint locked at its initial angle, no retraining", 26, False, (90, 90, 90)),
-                            ("same seed and same policy samples for every method", 26, False, (90, 90, 90))]), FPS * 4)
+        grey, dark = (90, 90, 90), (20, 20, 20)
+        sup.put(card(W, H, [("Training-free fault adaptation", 40, True, dark),
+                            ("of a joint-space diffusion policy", 40, True, dark),
+                            ("", 14, False, dark),
+                            ("one joint locked at its initial angle, no retraining", 25, False, grey),
+                            ("same seed and same policy samples for every method", 25, False, grey),
+                            ("", 14, False, dark),
+                            ("B1: policy output sent as is", 25, False, grey),
+                            ("B-IK pos / pose: weighted IK on the healthy joints", 25, False, grey),
+                            ("Priority IK: position first, orientation in its null space", 25, True,
+                             hex2rgb(COLOR["prio"]))]), FPS * 6)
         if snaps:
             sup.put(setup_frames(snaps, W, H), FPS * 4)
-        sup.put(card(W, H, [("Methods", 34, True, (20, 20, 20)), ("", 16, False, (0, 0, 0)),
-                            ("B1: policy output sent as is", 26, False, (90, 90, 90)),
-                            ("B-IK pos / pose: weighted IK on the healthy joints", 26, False, (90, 90, 90)),
-                            ("Priority IK: position first, orientation in its null space", 26, True, hex2rgb(COLOR["prio"]))]),
-                FPS * 5)
         for sc, eps in loaded:
             ms = methods(eps)
             one = Writer(os.path.join(vids, f"{sc['id']}_2x2.mp4"), W, H)
-            sup.put(card(W, H, [(f"{TASK_LABEL[sc['task']]}, joint {sc['joint']} locked", 38, True, (20, 20, 20)),
-                                (TASK_DESC[sc["task"]], 26, False, (90, 90, 90))]), int(FPS * 2.5))
-            for fr in tile_frames(sc, eps, ms):
+            gen = tile_frames(sc, eps, ms)
+            first = next(gen)
+            sup.put(card(W, H, [(f"{TASK_LABEL[sc['task']]}, joint {sc['joint']} locked", 40, True, dark),
+                                (TASK_DESC[sc["task"]], 24, False, grey)], bg=first), int(FPS * 1.5))
+            sup.put(first); one.put(first)
+            for fr in gen:
                 sup.put(fr); one.put(fr)
             one.close()
         sup.close()
