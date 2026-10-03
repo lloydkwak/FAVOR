@@ -97,45 +97,100 @@ def crop_box(eps, W, H, aspect=4 / 3, pad=0.35, min_frac=0.55):
 
 
 # ---------------------------------------------------------------- paper figures
-def fig_qual(sc, eps, methods, out, stride):
+PHASE = ["grasp", "transport", "place"]
+
+
+def _panel(ax, e, m, img, path=False, crop=None, badge=False, frame_lw=True):
+    x0, y0, x1, y1 = crop
+    ax.imshow(img[y0:y1, x0:x1])
+    if path:
+        uv = e.uv - [x0, y0]
+        ax.plot(uv[:, 0], uv[:, 1], color="white", lw=2.4, alpha=0.9)
+        ax.plot(uv[:, 0], uv[:, 1], color=LINE[m], lw=1.3)
+        ax.plot(*uv[0], "o", ms=3.2, mfc="white", mec="black", mew=0.6)
+        ax.set_xlim(0, x1 - x0); ax.set_ylim(y1 - y0, 0)
+    if badge:
+        ok = e.success >= 1
+        ax.text(0.96, 0.05, "success" if ok else "fail", transform=ax.transAxes, ha="right", va="bottom",
+                fontsize=6.5, fontweight="bold", color="white",
+                bbox=dict(boxstyle="round,pad=0.18", fc=OK if ok else BAD, ec="none"))
+    ax.set_xticks([]); ax.set_yticks([])
+    for sp in ax.spines.values():
+        sp.set_visible(True)
+        sp.set_linewidth(1.4 if (m == "prio" and frame_lw) else 0.4)
+        sp.set_color(COLOR["prio"] if m == "prio" else "#999999")
+
+
+def _row_label(ax, m, fs=7.5):
+    ax.set_ylabel(LABEL[m].replace(" (", "\n("), fontsize=fs, fontweight="bold" if m == "prio" else "normal",
+                  labelpad=3)
+
+
+def fig_qual(sc, eps, methods, out, stride, phases=(0, 1, 2)):
+    """One scenario: rows = methods, columns = keyframes (same absolute step for every row) + EE path."""
     ref = eps["prio"]
-    ks = keyframes(ref, stride)
+    ks = [keyframes(ref, stride)[i] for i in phases]
     W, H = ref.cam["width"], ref.cam["height"]
-    x0, y0, x1, y1 = crop_box([eps[m] for m in methods], W, H)
+    crop = crop_box([eps[m] for m in methods], W, H)
     ncol = len(ks) + 1
     pw = 1.55
-    ph = pw * (y1 - y0) / (x1 - x0)
-    fig, axs = plt.subplots(len(methods), ncol, figsize=(0.55 + pw * ncol, 0.25 + ph * len(methods)),
-                            gridspec_kw=dict(wspace=0.03, hspace=0.05), squeeze=False)
+    ph = pw * (crop[3] - crop[1]) / (crop[2] - crop[0])
+    fig, axs = plt.subplots(len(methods), ncol, figsize=(0.45 + pw * ncol, 0.2 + ph * len(methods)),
+                            gridspec_kw=dict(wspace=0.03, hspace=0.04), squeeze=False)
     for r, m in enumerate(methods):
         e = eps[m]
-        for c in range(ncol):
-            ax = axs[r, c]
-            if c < len(ks):
-                ax.imshow(e.frame(ks[c])[y0:y1, x0:x1])
+        for c, k in enumerate(ks):
+            _panel(axs[r, c], e, m, e.frame(k), crop=crop)
+            if r == 0:
+                axs[r, c].set_title(f"{PHASE[phases[c]]}, {k / FPS:.1f} s", pad=2)
+        _panel(axs[r, -1], e, m, e.frame(e.steps[-1]), path=True, crop=crop, badge=True)
+        if r == 0:
+            axs[r, -1].set_title("EE path, end", pad=2)
+        _row_label(axs[r, 0], m)
+    save(fig, out)
+
+
+def fig_qual_combined(blocks, out, stride):
+    """Paper figure: scenarios side by side, each (grasp, place, EE path) x methods. Full text width."""
+    methods = ["b1", "pos", "pose", "prio"]
+    nb = len(blocks)
+    crops = []
+    for sc, eps in blocks:
+        ref = eps["prio"]
+        crops.append(crop_box([eps[m] for m in methods if m in eps], ref.cam["width"], ref.cam["height"]))
+    pw = 7.0 / (3 * nb + 0.25 * (nb - 1) + 0.35)
+    ph = pw * max((c[3] - c[1]) / (c[2] - c[0]) for c in crops)
+    wr = []
+    for i in range(nb):
+        wr += [1, 1, 1] + ([0.25] if i < nb - 1 else [])
+    fig, axs = plt.subplots(len(methods), len(wr), figsize=(7.16, 0.32 + ph * len(methods)),
+                            gridspec_kw=dict(width_ratios=wr, wspace=0.03, hspace=0.04), squeeze=False)
+    for i, ((sc, eps), crop) in enumerate(zip(blocks, crops)):
+        c0 = i * 4
+        ks = keyframes(eps["prio"], stride)
+        cols = [(ks[0], "grasp"), (ks[2], "place")]
+        for r, m in enumerate(methods):
+            if m not in eps:
+                for c in range(3):
+                    axs[r, c0 + c].axis("off")
+                continue
+            e = eps[m]
+            for c, (k, name) in enumerate(cols):
+                _panel(axs[r, c0 + c], e, m, e.frame(k), crop=crop)
                 if r == 0:
-                    lab = ["grasp", "transport", "place"][c] if c < 3 else ""
-                    ax.set_title(f"t = {ks[c] / FPS:.1f} s  ({lab})", pad=2)
-            else:
-                ax.imshow(e.frame(e.steps[-1])[y0:y1, x0:x1])
-                uv = e.uv - [x0, y0]
-                ax.plot(uv[:, 0], uv[:, 1], color="white", lw=2.6, alpha=0.9)
-                ax.plot(uv[:, 0], uv[:, 1], color=LINE[m], lw=1.4)
-                ax.plot(*uv[0], "o", ms=3.5, mfc="white", mec="black", mew=0.6)
-                ax.set_xlim(0, x1 - x0); ax.set_ylim(y1 - y0, 0)
-                if r == 0:
-                    ax.set_title(f"end-effector path (t = {e.steps[-1] / FPS:.0f} s)", pad=2)
-                ok = e.success >= 1
-                ax.text(0.97, 0.05, "success" if ok else "fail", transform=ax.transAxes, ha="right", va="bottom",
-                        fontsize=7, fontweight="bold", color="white",
-                        bbox=dict(boxstyle="round,pad=0.2", fc=OK if ok else BAD, ec="none"))
-            ax.set_xticks([]); ax.set_yticks([])
-            for s in ax.spines.values():
-                s.set_visible(True); s.set_linewidth(1.6 if m == "prio" else 0.4)
-                s.set_color(COLOR["prio"] if m == "prio" else "#999999")
-        axs[r, 0].set_ylabel(LABEL[m].replace(" (", "\n("), fontsize=8,
-                             fontweight="bold" if m == "prio" else "normal")
-    fig.suptitle(f"{TASK_LABEL[sc['task']]}, joint {sc['joint']} locked (seed {sc['seed']})", y=1.0, fontsize=9)
+                    axs[r, c0 + c].set_title(f"{name}, {k / FPS:.1f} s", pad=2, fontsize=7)
+            _panel(axs[r, c0 + 2], e, m, e.frame(e.steps[-1]), path=True, crop=crop, badge=True)
+            if r == 0:
+                axs[r, c0 + 2].set_title("EE path, end", pad=2, fontsize=7)
+            if i == 0:
+                _row_label(axs[r, 0], m, fs=7)
+        tag = "abcdefgh"[i]
+        axs[0, c0 + 1].text(0.5, 1.32, f"({tag}) {TASK_LABEL[sc['task']]}, J{sc['joint']} locked",
+                            transform=axs[0, c0 + 1].transAxes, ha="center", va="bottom", fontsize=8.5,
+                            fontweight="bold")
+        if i < nb - 1:
+            for r in range(len(methods)):
+                axs[r, c0 + 3].axis("off")
     save(fig, out)
 
 
@@ -165,42 +220,63 @@ def fig_traj(sc, eps, methods, out):
     save(fig, out)
 
 
+def draw_schematic(ax, s, joint):
+    """Side-view kinematic sketch of the Panda from the simulator's joint anchors (initial pose)."""
+    P = np.vstack([s["anchors"], np.asarray(s["ee"])[None]])
+    d = P[:, :2] - P[0, :2]
+    h = np.linalg.svd(d, full_matrices=False)[2][0] if np.linalg.norm(d) > 1e-6 else np.array([1.0, 0.0])
+    if h @ (P[-1, :2] - P[0, :2]) < 0:
+        h = -h
+    n = np.array([-h[1], h[0], 0.0])
+    X, Z = d @ h, P[:, 2]
+    zb = Z[0] - 0.333                                  # base frame sits 0.333 m below joint 1
+    ax.add_patch(plt.Rectangle((X[0] - 0.07, zb - 0.06), 0.14, 0.06, fc="#D9D9D9", ec="#888888", lw=0.5))
+    ax.plot([X[0], X[0]], [zb, Z[0]], color="#BFBFBF", lw=5, solid_capstyle="round", zorder=1)
+    ax.plot(X, Z, color="#BFBFBF", lw=5, solid_capstyle="round", solid_joinstyle="round", zorder=1)
+    ax.plot(X[-1], Z[-1], marker="s", ms=4, color="#777777", zorder=3)
+    for i in range(7):
+        col = COLOR["prio"] if i + 1 == joint else "black"
+        a = np.asarray(s["axes"][i], dtype=float)
+        if abs(a @ n) > 0.7:                           # axis out of the drawing plane: rotation shown in plane
+            ax.plot(X[i], Z[i], "o", ms=6.5, mfc="white", mec=col, mew=1.3, zorder=4)
+            ax.plot(X[i], Z[i], "o", ms=1.8, color=col, zorder=5)
+        else:                                          # axis in the plane: drawn as a short bar along it
+            v = np.array([a[:2] @ h, a[2]]); v = v / (np.linalg.norm(v) + 1e-9) * 0.035
+            ax.plot([X[i] - v[0], X[i] + v[0]], [Z[i] - v[1], Z[i] + v[1]], color=col, lw=3.2,
+                    solid_capstyle="butt", zorder=4)
+    groups = []                                        # coincident anchors share one label (e.g. J1/J2)
+    for i in range(7):
+        for g in groups:
+            if np.hypot(X[i] - X[g[0]], Z[i] - Z[g[0]]) < 0.02:
+                g.append(i); break
+        else:
+            groups.append([i])
+    groups.sort(key=lambda g: -Z[g[0]])
+    xl = X.max() + 0.16
+    zs = np.linspace(Z.max() + 0.02, zb + 0.05, len(groups))
+    for g, zl in zip(groups, zs):
+        hit = joint - 1 in g
+        col = COLOR["prio"] if hit else "black"
+        lab = ", ".join(f"J{i + 1}" for i in g) + (" locked" if hit else "")
+        ax.annotate(lab, xy=(X[g[0]], Z[g[0]]), xytext=(xl, zl), fontsize=6.5, ha="left", va="center", color=col,
+                    fontweight="bold" if hit else "normal",
+                    arrowprops=dict(arrowstyle="-", lw=0.4, color=col, shrinkA=1, shrinkB=3))
+    ax.set_aspect("equal")
+    ax.set_xlim(X.min() - 0.12, xl + 0.22); ax.set_ylim(zb - 0.09, Z.max() + 0.08)
+    ax.axis("off")
+
+
 def fig_setup(snaps, out, joint):
     tasks = [t for t in TASK_LABEL if t in snaps]
-    fig, axs = plt.subplots(1, len(tasks) + 1, figsize=(7.16, 1.65), gridspec_kw=dict(wspace=0.04))
+    fig, axs = plt.subplots(1, len(tasks) + 1, figsize=(7.16, 1.62),
+                            gridspec_kw=dict(wspace=0.04, width_ratios=[1] * len(tasks) + [1.05]))
     for ax, t in zip(axs, tasks):
         ax.imshow(snaps[t]["plain"]["img"]); ax.set_xticks([]); ax.set_yticks([])
         ax.set_title(TASK_LABEL[t], pad=2)
-    t0 = tasks[-1]
-    s = snaps[t0]["plain"]
-    img = snaps[t0]["highlight"][joint]
-    cam = {k: s[k] for k in ("cam_pos", "cam_mat", "fovy", "width", "height")}
-    uv = project(s["anchors"], cam)
-    ee = project(s["ee"][None], cam)[0]
-    pts = np.vstack([uv, ee])
-    W, H = cam["width"], cam["height"]
-    lo, hi = pts.min(0), pts.max(0)
-    side = max(hi - lo) * 1.9
-    c = (lo + hi) / 2 + [side * 0.12, 0]
-    x0 = int(np.clip(c[0] - side / 2, 0, W - min(side, W))); y0 = int(np.clip(c[1] - side / 2, 0, H - min(side, H)))
-    x1, y1 = int(min(W, x0 + side)), int(min(H, y0 + side))
-    ax = axs[-1]
-    ax.imshow(img[y0:y1, x0:x1]); ax.set_xticks([]); ax.set_yticks([])
-    ax.set_title(f"Panda, J{joint} in red", pad=2)
-    q = uv - [x0, y0]
-    lx = (x1 - x0) * 0.97
-    ys = np.linspace((y1 - y0) * 0.1, (y1 - y0) * 0.9, 7)
-    order = np.argsort(q[:, 1])
-    for k, i in enumerate(order):
-        col = COLOR["prio"] if i + 1 == joint else "black"
-        ax.plot(*q[i], "o", ms=2.5, color=col)
-        ax.annotate(f"J{i + 1}", xy=q[i], xytext=(lx, ys[k]), fontsize=6.5, ha="right", va="center", color=col,
-                    fontweight="bold" if i + 1 == joint else "normal",
-                    arrowprops=dict(arrowstyle="-", lw=0.4, color=col, shrinkA=1, shrinkB=1))
-    ax.set_xlim(0, x1 - x0); ax.set_ylim(y1 - y0, 0)
-    for a in axs:
-        for sp in a.spines.values():
+        for sp in ax.spines.values():
             sp.set_linewidth(0.4); sp.set_color("#999999")
+    draw_schematic(axs[-1], snaps[tasks[-1]]["plain"], joint)
+    axs[-1].set_title("Panda joints", pad=2)
     save(fig, out)
 
 
@@ -379,10 +455,14 @@ def main():
     for sc, eps in loaded:
         if sc["id"].startswith("C"):
             continue
-        shown = [m for m in ["b1"] + sc["contrast"] + ["prio"] if m in eps]
+        shown = [m for m in ["b1", "pos", "pose", "prio"] if m in eps]
         fig_qual(sc, eps, shown, os.path.join(figs, f"fig_qual_{sc['id']}"), a.stride)
         fig_traj(sc, eps, [m for m in ["b1", "pos", "pose", "prio"] if m in eps],
                  os.path.join(figs, f"fig_qual_{sc['id']}_traj"))
+
+    paper_blocks = [(sc, eps) for sc, eps in loaded if not sc["id"].startswith("C")]
+    if paper_blocks:
+        fig_qual_combined(paper_blocks, os.path.join(figs, "fig_qual"), a.stride)
 
     snaps = None
     sp = os.path.join(Q, "snapshots.pkl")

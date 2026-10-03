@@ -4,7 +4,9 @@ locked-sweep results (no new experiments: the chosen seeds are re-run with rende
 and render_qualitative.py checks the outcome against these JSONs).
 
 A seed qualifies for a scenario when Priority IK succeeds and B1 and the contrast
-baseline(s) fail on that exact seed.
+baseline(s) fail on that exact seed. Among those, representative seeds are preferred:
+B-IK pos and B-IK pose succeed or fail there as they do on most seeds of the condition
+(so a baseline that usually works is not shown failing).
   A  distal   (J6, J7)  contrast: B-IK pose, preferred Bowl-Stove J7
   B  proximal (J1, J3)  contrast: B-IK pos
   C  video only: best remaining (task, joint) on another task, every baseline fails
@@ -64,7 +66,8 @@ def main():
             ep = r["ep"]
             good = [s for s in r["seeds"] if ep["prio"][s] >= 1 and ep["b1"][s] < 1
                     and all(ep[c][s] < 1 for c in sp["contrast"])]
-            strict = [s for s in good if ep["pos"][s] < 1 and ep["pose"][s] < 1]
+            # representative: B-IK pos / pose behave on this seed as they do on most seeds of the condition
+            strict = [s for s in good if all((ep[m][s] >= 1) == (r["mean"][m] >= 0.5) for m in ("pos", "pose"))]
             if not good:
                 continue
             gap = r["mean"]["prio"] - max(r["mean"][c] for c in sp["contrast"])
@@ -73,10 +76,10 @@ def main():
         if not cands:
             print(f"[{sp['id']}] no qualifying condition"); continue
         cands.sort(key=lambda c: (c[0], round(c[2], 2), c[1]), reverse=True)
-        print(f"\n[{sp['id']}] candidates (task, joint, n_strict, n_good, gap, means b1/pos/pose/prio):")
+        print(f"\n[{sp['id']}] candidates (task, joint, n_rep, n_good, gap, means b1/pos/pose/prio):")
         for pref, ns, gap, r, good, strict in cands[:6]:
             m = r["mean"]
-            print(f"  {r['task']:<14} J{r['joint']}  strict={ns:2d} good={len(good):2d} gap={gap:+.2f}  "
+            print(f"  {r['task']:<14} J{r['joint']}  rep={ns:2d} good={len(good):2d} gap={gap:+.2f}  "
                   f"{m['b1']:.2f}/{m['pos']:.2f}/{m['pose']:.2f}/{m['prio']:.2f}{'  (preferred)' if pref else ''}")
         _, _, gap, r, good, strict = cands[0]
         pool = strict or good
