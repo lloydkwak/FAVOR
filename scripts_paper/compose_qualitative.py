@@ -251,7 +251,7 @@ def draw_schematic(ax, s, joint):
                 g.append(i); break
         else:
             groups.append([i])
-    groups.sort(key=lambda g: -Z[g[0]])
+    groups.sort(key=lambda g: -(Z[g[0]] + 0.25 * (X[g[0]] - X.min())))  # right-hand anchors get the upper label: no crossing leaders
     xl = X.max() + 0.16
     zs = np.linspace(Z.max() + 0.02, zb + 0.05, len(groups))
     for g, zl in zip(groups, zs):
