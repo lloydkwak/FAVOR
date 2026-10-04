@@ -48,7 +48,10 @@ class RenderRecorder(gym.Wrapper):
         self.dir = os.path.join(out_dir, tag)
         os.makedirs(self.dir, exist_ok=True)
         self.record_seeds = {int(s) for s in record_seeds}
-        self.camera, self.W, self.H = camera, int(width), int(height)
+        # camera: a name, or a list of candidates of which the first one present in the scene is used
+        self._camera_cands = list(camera) if isinstance(camera, (list, tuple)) else [camera]
+        self.camera, self.W, self.H = self._camera_cands[0], int(width), int(height)
+        self._camera_resolved = False
         self.png_stride, self.fps, self.crf = int(png_stride), int(fps), int(crf)
         self.highlight, self.highlight_rgba = highlight, np.array(highlight_rgba, dtype=np.float32)
         self.fault_joint_name = fault_joint_name
@@ -114,6 +117,12 @@ class RenderRecorder(gym.Wrapper):
         if seed is None:
             return
         sim = self._sim()
+        if not self._camera_resolved:
+            names = list(sim.model.camera_names)
+            self.camera = next((c for c in self._camera_cands if c in names), "agentview")
+            self._camera_resolved = True
+            print(f"[render_recorder] camera {self.camera} (candidates {self._camera_cands}, scene has {names})",
+                  flush=True)
         ep = dict(seed=seed, ee=[self._ee(sim)], q=[self._q(sim)], act=[], rew=[],
                   render=seed in self.record_seeds, frames=[], frame_steps=[], writer=None)
         try:

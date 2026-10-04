@@ -27,7 +27,7 @@ Left: Bowl-Stove, joint 7 locked. Right: Soup, joint 3 locked. Full video: <a hr
 - **No retraining.** Works on an unchanged pretrained joint-space Diffusion Policy. It needs only the fault description (which joint, and its admissible range).
 - **Priority IK is best overall.** With a joint locked, success rises from 0.11 (no intervention) to **0.48**. The best fixed weighted-IK setting reaches 0.32, and denoising-time methods reach 0.19 (E-C-I) and 0.31 (RG-DDPM). Every comparison is paired over 4 tasks × 7 joints × 20 seeds.
 - **No single weight works.** Over nine weighted-IK settings (orientation weight 0.05–1.0, with and without posture regularization), the best mean on locked J1/J3/J5/J6/J7 is 0.52, against 0.67 for Priority IK. Settings that solve proximal faults fail distal ones, and the reverse. Priority IK uses one setting for every joint.
-- **How decides whether where helps.** Guidance inside the sampler with a *weighted* internal correction lowers success in front of Priority IK (0.67 → 0.52 on the same 20 conditions); the same guidance with a *prioritized* internal correction raises it to 0.73 (33 : 57 episodes, p = 0.015), at 3.3× the inference time. Reversing the priority to orientation first lowers success whatever the damping (0.55 and 0.52).
+- **How decides whether where helps.** Guidance inside the sampler with a *weighted* internal correction lowers success in front of Priority IK (0.67 → 0.52 on the same 20 conditions); the same guidance with a *prioritized* internal correction raises it to 0.73 (33 : 57 episodes, p = 0.015), at 3.3× the inference time. The prioritized internal correction also has no motion budget; `rg_prioint_b03` and `rg_wint_nob` separate the two. Reversing the priority to orientation first lowers success whatever the damping (0.55 and 0.52).
 - **Limitation.** The fault description must be accurate. A 0.01 rad error in the assumed lock angle already drops success from 0.67 to 0.39.
 
 ## Problem and methods
@@ -156,8 +156,9 @@ Selecting among samples does not address the fault, and denoising-time guidance 
 | w_r 0.3, ρ 0 | 0.86 | 0.09 | 0.52 | 78 : 17 |
 | **Priority IK** | **0.84** | **0.46** | **0.67** | – |
 
-Removing the posture term (ρ = 0) solves the proximal faults at any weight but collapses the distal ones: what kept
-W-IK pos alive on J6/J7 was the posture term limiting joint motion, not the weight. All nine settings
+Removing the posture term (ρ = 0) solves the proximal faults at any weight but collapses the distal ones. With ρ = 0
+the Levenberg–Marquardt update is also almost undamped (ρ² is the damping; Priority IK uses λ₁² = 1e-4), so the run
+`wik_w030_r000_dm4` (ρ = 0, damping 1e-4) separates the posture term from the numerical damping. All nine settings
 (`paper/tables/tab_wik_sweep.csv`) are below Priority IK with p < 1e-7.
 
 | Variant (same 20 conditions) | proximal | distal | mean | Prio : variant |

@@ -1,5 +1,5 @@
 # data, checkpoints and experiment outputs (not versioned)
-data/
+/data/
 results/
 analysis_out/
 

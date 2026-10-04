@@ -57,6 +57,8 @@ def main():
     ap.add_argument("--video", default="paper/video")
     ap.add_argument("--out", default="paper/multimedia")
     ap.add_argument("--scenarios", default="results/qual/scenarios.json")
+    ap.add_argument("--zip-video", choices=["full", "small"], default="full",
+                    help="video inside the zip: the original (RA-L zip limit 50 MB) or the <= 10 MB re-encode")
     a = ap.parse_args()
     import av, json
     src = os.path.join(a.video, "favor_supp.mp4")
@@ -72,15 +74,15 @@ def main():
                     (f" ({sc['note']})" if sc.get("note") else "") + "\n"
     open(os.path.join(a.out, "ReadMe.txt"), "w").write(README.format(w=w, h=h, dur=dur, scen=scen))
     open(os.path.join(a.out, "Summary.txt"), "w").write(SUMMARY)
-    z = os.path.join(a.out, "FAVOR_multimedia.zip")
-    with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.write(src, "favor_supp.mp4")
-        zf.write(os.path.join(a.out, "ReadMe.txt"), "ReadMe.txt")
-        zf.write(os.path.join(a.out, "Summary.txt"), "Summary.txt")
-    print(f"wrote {z} ({os.path.getsize(z) / 1e6:.1f} MB; RA-L limit 50 MB)")
     small = os.path.join(a.out, "favor_supp_10MB.mp4")
     reencode(src, small, 9.5)
     print(f"wrote {small} ({os.path.getsize(small) / 1e6:.1f} MB; single-video limit 10 MB)")
+    z = os.path.join(a.out, "FAVOR_multimedia.zip")
+    with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(src if a.zip_video == "full" else small, "favor_supp.mp4")
+        zf.write(os.path.join(a.out, "ReadMe.txt"), "ReadMe.txt")
+        zf.write(os.path.join(a.out, "Summary.txt"), "Summary.txt")
+    print(f"wrote {z} ({os.path.getsize(z) / 1e6:.1f} MB, {a.zip_video} video; RA-L limit 50 MB)")
 
 
 if __name__ == "__main__":

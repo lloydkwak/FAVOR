@@ -282,7 +282,7 @@ def draw_schematic(ax, s, joint):
                 ha="left" if u[0] > 0.3 else ("right" if u[0] < -0.3 else "center"), va="center")
     ax.set_aspect("equal")
     x0, x1 = chain[:, 0].min() - 0.32, chain[:, 0].max() + 0.42
-    ax.set_xlim(x0, x1); ax.set_ylim(zb - 0.2, chain[:, 1].max() + 0.1)
+    ax.set_xlim(x0, x1); ax.set_ylim(zb - 0.2, chain[:, 1].max() + 0.2)
     for r, (txt, sym) in enumerate([("axis out of page", "o"), ("axis in page", "-")]):   # symbol key
         ly = zb - 0.09 - 0.08 * r; lx = x1 - 0.42
         if sym == "o":
@@ -413,13 +413,14 @@ def tile_frames(sc, eps, methods, tile=480, head=72):
                     pass
             fr = Image.fromarray(last[m]).resize((tile, tile))
             ox, oy = (k % cols) * tile, head + (k // cols) * tile
-            canvas.paste(fr, (ox, oy))
             s = tile / e.cam["width"]
             n = min(t, len(e.uv) - 1)
-            pts = [(ox + u * s, oy + v * s) for u, v in e.uv[:n + 1]]
-            if len(pts) > 1:
-                d.line(pts, fill=(255, 255, 255), width=6)
-                d.line(pts, fill=hex2rgb(LINE[m]), width=3)
+            pts = [(u * s, v * s) for u, v in e.uv[:n + 1]]
+            if len(pts) > 1:                       # drawn on the tile itself, so it is clipped to the tile
+                dt = ImageDraw.Draw(fr)
+                dt.line(pts, fill=(255, 255, 255), width=6)
+                dt.line(pts, fill=hex2rgb(LINE[m]), width=3)
+            canvas.paste(fr, (ox, oy))
             lab = LABEL[m]
             w = d.textlength(lab, font=fb)
             d.rectangle([ox + 8, oy + 8, ox + 22 + w, oy + 40], fill=(255, 255, 255))

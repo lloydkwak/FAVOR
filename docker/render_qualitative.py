@@ -101,7 +101,7 @@ def cmd_run(a):
             if key in verify and not a.force:
                 print(f"SKIP (done) {tag}", flush=True); continue
             base, cfg = base_policy(task)
-            rec = dict(REC, out_dir=QUAL, tag=tag, record_seeds=sc["seeds"])
+            rec = dict(REC, out_dir=QUAL, tag=tag, record_seeds=sc["seeds"], camera=sc.get("camera", REC["camera"]))
             runner = make_runner(task, jn, cfg, sc["n_test"], rec, f"{sc['id']}_{m}")
             policy = make_policy(m, base, runner, jn)
             log = runner.run(policy)

@@ -1,19 +1,29 @@
 """
-RG-DDPM with a prioritized internal correction (revision variant 'rg_prioint').
+RG-DDPM internal-correction variants (revision runs), separating HOW the internal correction
+splits the error from HOW FAR it may move the healthy joints.
 
 Identical to reach_guided.reach_correct (same reachability test, same healthy-chart
-re-expression, same epsilon rewrite) except for the step that moves an unreachable
-waypoint to a reachable pose: instead of weighted pose IK limited to the execution
-layer's motion budget, the faulty robot's pose is found by position-first Priority IK
-(ik_priority.py, lam2 = 0.2), with no motion limit. This fills the missing cell of the
-where x how comparison: denoising-time guidance whose internal correction is prioritized.
+re-expression, same epsilon rewrite) except for the step that moves an unreachable waypoint
+to a reachable pose on the faulty robot:
+
+  original RG-DDPM   weighted pose IK (w_r 1.0) regularized to the policy posture (reg 0.1)
+  internal='prio'    position-first Priority IK (ik_priority.py, lam2 0.2)
+  internal='weighted' weighted pose IK (w_r 1.0) without posture term (reg 0, damping 1e-4)
+  budget=None        no limit on how far the healthy joints move
+  budget=0.3         every healthy joint clamped to within 0.3 rad of the policy's waypoint
+                     (the same 0.3 rad that the reachability test uses)
+
+Revision methods: rg_prioint (prio, no budget), rg_prioint_b03 (prio, budget 0.3),
+rg_wint_nob (weighted, no budget).
 """
+import functools
 import torch
 from ik_priority import ik_priority
 from reach_guided import ik_lm, _pose_err
 
 
-def reach_correct_prio(policy, x0, kin, j, q_lo_phys, q_hi_phys, cfg, state, acc, prio_iters=10):
+def reach_correct_variant(policy, x0, kin, j, q_lo_phys, q_hi_phys, cfg, state, acc,
+                          internal="prio", budget=None, iters=10):
     B, T, Da = x0.shape
     nz = policy.normalizer['action']
     a = nz.unnormalize(x0)
@@ -37,7 +47,14 @@ def reach_correct_prio(policy, x0, kin, j, q_lo_phys, q_hi_phys, cfg, state, acc
         if not unreach.any():
             return None
         idx = unreach.nonzero().squeeze(-1)
-        u_b, _ = ik_priority(kin, q[idx], j, q_con[idx], n_iter=prio_iters, lam2=0.2)   # <- prioritized
+        if internal == "prio":
+            u_b, _ = ik_priority(kin, q[idx], j, q_con[idx], n_iter=iters, lam2=0.2)
+        else:
+            u_b = ik_lm(kin, p_t[idx], R_t[idx], q_ref_f[idx].clone(), q_ref_f[idx], free_f,
+                        iters, 1.0, 0.0, damping=1e-4)
+        if budget is not None:
+            u_b = u_b.clone()
+            u_b[:, free_f] = q_ref_f[idx][:, free_f] + (u_b - q_ref_f[idx])[:, free_f].clamp(-budget, budget)
         p_r, R_r = kin.forward(u_b)
         q_h = ik_lm(kin, p_r, R_r, q[idx].clone(), q[idx], list(range(7)),
                     cfg.iters_h, cfg.rot_weight, cfg.reg)
@@ -47,3 +64,11 @@ def reach_correct_prio(policy, x0, kin, j, q_lo_phys, q_hi_phys, cfg, state, acc
     a2[..., :7] = q_out.reshape(B, T, 7).to(a2.dtype)
     mask = torch.zeros(B * T, dtype=torch.bool, device=q.device); mask[idx] = True
     return nz.normalize(a2), mask.reshape(B, T)
+
+
+reach_correct_prio = functools.partial(reach_correct_variant, internal="prio", budget=None)
+VARIANTS = {
+    "rg_prioint": dict(internal="prio", budget=None),
+    "rg_prioint_b03": dict(internal="prio", budget=0.3),
+    "rg_wint_nob": dict(internal="weighted", budget=None),
+}

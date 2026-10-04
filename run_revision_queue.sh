@@ -7,18 +7,22 @@ set -uo pipefail
 cd "$(dirname "$0")"
 DC="docker compose -f docker/docker-compose.libero.yml run --rm libero bash -c"
 TASKS="alphabet_soup milk bowl_ramekin bowl_stove"
-DEFAULT="nofault wik_w100_r000 wik_w005_r000 wik_w030_r010 wik_w020_r010 wik_w050_r010 wik_w010_r010 wik_w030_r000 \
-prio_rev_l001 rg_prioint latency qual package analysis"
+# round 1 (done): nofault wik_w100_r000 wik_w005_r000 wik_w030_r010 wik_w020_r010 wik_w050_r010 wik_w010_r010
+#                 wik_w030_r000 prio_rev_l001 rg_prioint latency qual package analysis
+# round 2: healthy n=100, W-IK rho=0 with Priority IK's damping, RG budget/weighting split, RG on moderate range faults,
+#          failure-case video from a camera that keeps the arm in view
+DEFAULT="nofault100 wik_w030_r000_dm4 rg_prioint_b03 rg_wint_nob rg_prioint:moderate qual_d package analysis"
 STEPS=${*:-$DEFAULT}
 filt() { stdbuf -oL tr '\r' '\n' | grep --line-buffered -aE "$1" | grep --line-buffered -v BrokenPipe; }
 
 for s in $STEPS; do
   echo "=== [$(date '+%m-%d %H:%M')] $s ==="
   case $s in
-    nofault|wik_w*|prio_rev_l001|rg_prioint)
+    nofault*|wik_w*|prio_rev_l001|rg_*)
+      m=${s%%:*}; lvl=""; [[ "$s" == *:* ]] && lvl=${s#*:}
       for t in $TASKS; do
         $DC "pip install pytorch_kinematics --break-system-packages -q 2>&1 | tail -1
-             cd /workspace/diffusion_policy && python -u /workspace/docker/run_libero_revision.py $s $t" 2>&1 \
+             cd /workspace/diffusion_policy && python -u /workspace/docker/run_libero_revision.py $m $t $lvl" 2>&1 \
           | filt "^RESULT|^SKIP|^DONE|Error|Traceback" || echo "!!! FAILED: $s $t"
       done ;;
     latency)
@@ -27,6 +31,13 @@ for s in $STEPS; do
         | filt "^LAT|^DONE|Error|Traceback" ;;
     qual)   # adds the C (representative proximal) and D (unrecoverable) scenarios; A and B are kept
       ./run_qual_media.sh select run compose ;;
+    qual_d) # re-render only the failure case with a camera that keeps the arm in view, then recompose
+      $DC "cd /workspace && python scripts_paper/select_qual_scenarios.py --results results --out results/qual/scenarios.json" \
+        | grep -E "^  -> "
+      $DC "pip install pytorch_kinematics --break-system-packages -q 2>&1 | tail -1
+           cd /workspace/diffusion_policy && python -u /workspace/docker/render_qualitative.py run --only D_unrecoverable --force" 2>&1 \
+        | filt "^RERUN|^DONE|render_recorder|Error|Traceback"
+      ./run_qual_media.sh compose ;;
     package)
       $DC "pip install -q pillow av --break-system-packages 2>&1 | tail -1
            cd /workspace && python scripts_paper/make_preview_gif.py --video paper/video \

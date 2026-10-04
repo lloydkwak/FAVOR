@@ -30,7 +30,8 @@ SPECS = [
     dict(id="B_proximal", joints=[1, 3], contrast=["pos"], prefer=("alphabet_soup", 3), paper=True),
     dict(id="C_proximal", joints=[1, 3], contrast=["pos", "pose"], prefer=("bowl_stove", 1), paper=False),
     dict(id="D_unrecoverable", joints=[2, 4], contrast=None, prefer=None, paper=False,
-         note="kinematically unrecoverable: no method succeeds"),
+         note="kinematically unrecoverable: no method succeeds",
+         camera=["frontview", "sideview", "agentview"]),          # the arm leaves the agentview frame
 ]
 START, NENV = 10000, 5
 
@@ -99,7 +100,7 @@ def main():
         ep = r["ep"]
         out.append(dict(id=sp["id"], task=r["task"], joint=r["joint"], seeds=picks,
                         n_test=NENV * (k + 1), contrast=sp["contrast"] or [],
-                        paper=sp["paper"], note=sp.get("note", ""),
+                        paper=sp["paper"], note=sp.get("note", ""), **({"camera": sp["camera"]} if "camera" in sp else {}),
                         orig={s: {m: ep[m][s] for m in ep if ep[m] is not None and s in ep[m]} for s in picks},
                         cond_mean={m: v for m, v in r["mean"].items() if v is not None}))
         print(f"  -> {r['task']} J{r['joint']} seeds {picks} (re-run n_test={NENV * (k + 1)})")

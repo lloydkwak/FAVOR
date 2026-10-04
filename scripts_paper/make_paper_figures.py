@@ -172,36 +172,49 @@ def layer1(data, path, OUT, report):
     if not os.path.exists(path):
         print(f"  layer1: {path} not found -> skipped"); return
     rows = list(csv.DictReader(open(path)))
-    x1, y1, x2, y2, lv = [], [], [], [], []
+    x1, y1, x2, y2, lv, jl = [], [], [], [], [], []
     for r in rows:
         j = int(r["joint"][-1]); key = (r["level"], r["task"], j)
         B, P = data.get(key + ("b1",)), data.get(key + ("prio",))
         if B is None or P is None:
             continue
         x1.append(float(r["override_pos_mm"])); y1.append(B["score"])
-        x2.append(float(r["ik_pos_mm"])); y2.append(P["score"]); lv.append(r["level"])
+        x2.append(float(r["ik_pos_mm"])); y2.append(P["score"]); lv.append(r["level"]); jl.append(j)
     if len(x1) < 10:
         print("  layer1: too few matched conditions -> skipped"); return
     rho1, rho2 = spearman(x1, y1), spearman(x2, y2)
+    # J7 rotates about the flange axis: locking it changes only the gripper yaw, so its position error is
+    # zero by construction. Marked separately, with the correlation also reported without it.
+    keep = [i for i in range(len(jl)) if jl[i] != 7]
+    rho1n = spearman([x1[i] for i in keep], [y1[i] for i in keep])
+    rho2n = spearman([x2[i] for i in keep], [y2[i] for i in keep])
     lvcol = {"mild": "#8FA6CC", "moderate": "#163A78", "severe": "#E39A9E", "locked": "#B4131C"}
     fig, axs = plt.subplots(1, 2, figsize=(7.0, 2.2))
-    for ax, xs, ys, xl, yl, rho in [(axs[0], x1, y1, "EE error if the fault just overrides the joint [mm]", "B1 success", rho1),
-                                    (axs[1], x2, y2, "EE error left after IK retargeting [mm]", "Priority IK success", rho2)]:
+    for ax, xs, ys, xl, yl, rho, rhon in [
+            (axs[0], x1, y1, "EE position error if the fault just overrides the joint [mm]", "B1 success", rho1, rho1n),
+            (axs[1], x2, y2, "EE position error left after IK retargeting [mm]", "Priority IK success", rho2, rho2n)]:
         for L in LEVELS:
-            idx = [i for i, l in enumerate(lv) if l == L]
+            idx = [i for i, l in enumerate(lv) if l == L and jl[i] != 7]
             ax.scatter([max(xs[i], 0.05) for i in idx], [ys[i] for i in idx], s=9, color=lvcol[L], label=L.capitalize(),
                        edgecolors="none", alpha=0.85)
+            idx = [i for i, l in enumerate(lv) if l == L and jl[i] == 7]
+            ax.scatter([max(xs[i], 0.05) for i in idx], [ys[i] for i in idx], s=12, facecolors="none",
+                       edgecolors=lvcol[L], linewidths=0.8, alpha=0.9)
+        ax.scatter([], [], s=12, facecolors="none", edgecolors="#555555", linewidths=0.8,
+                   label="J7 (wrist yaw only)")
         ax.set_xscale("log"); ax.set_xlabel(xl); ax.set_ylabel(yl); ax.set_ylim(-0.03, 1.03)
-        ax.set_title(f"Spearman $\\rho$ = {rho:.2f}  (n={len(xs)})")
+        ax.set_title(f"Spearman $\\rho$ = {rho:.2f} (n={len(xs)}); without J7 {rhon:.2f}", fontsize=8)
         ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
     h, l = axs[0].get_legend_handles_labels()   # one shared legend above the panels, clear of the data
     fig.legend(h, l, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=len(l), frameon=False, fontsize=7,
-               markerscale=1.6, handletextpad=0.2, columnspacing=1.2, title="Fault level", title_fontsize=7)
+               markerscale=1.6, handletextpad=0.2, columnspacing=1.2, title="Fault level (hollow: J7)", title_fontsize=7)
     fig.tight_layout()
     savefig(fig, OUT, "fig_layer1"); report.append("fig_layer1")
     write_table(OUT, "tab_layer1", ["Predictor", "Outcome", "n", "Spearman $\\rho$"],
                 [["override EE error", "B1 success", len(x1), f"{rho1:.2f}"],
-                 ["residual EE error after IK", "Priority IK success", len(x2), f"{rho2:.2f}"]],
+                 ["residual EE error after IK", "Priority IK success", len(x2), f"{rho2:.2f}"],
+                 ["override EE error, without J7", "B1 success", len(keep), f"{rho1n:.2f}"],
+                 ["residual EE error after IK, without J7", "Priority IK success", len(keep), f"{rho2n:.2f}"]],
                 "Policy-free kinematic analysis (Layer 1) vs. closed-loop rollouts.", "tab:layer1")
     report.append("tab_layer1")
 
