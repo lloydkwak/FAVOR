@@ -26,8 +26,8 @@ Left: Bowl-Stove, joint 7 locked. Right: Soup, joint 3 locked. Full video: <a hr
 
 - **No retraining.** Works on an unchanged pretrained joint-space Diffusion Policy. It needs only the fault description (which joint, and its admissible range).
 - **Priority IK is best overall.** With a joint locked, success rises from 0.11 (no intervention) to **0.48**. The best fixed weighted-IK setting reaches 0.32, and denoising-time methods reach 0.19 (E-C-I) and 0.31 (RG-DDPM). Every comparison is paired over 4 tasks × 7 joints × 20 seeds.
-- **How beats where.** Adding reachability guidance inside the sampler in front of Priority IK *lowers* success (0.48 → 0.37). Reversing the priority to orientation first lowers it too (0.48 → 0.39).
-- **One setting for every joint.** Weighted IK needs a different position/orientation weight for proximal and distal faults. Priority IK uses one setting and matches the per-condition best weighted IK chosen after seeing the results (0.60 vs 0.60 over 112 conditions).
+- **No single weight works.** Over nine weighted-IK settings (orientation weight 0.05–1.0, with and without posture regularization), the best mean on locked J1/J3/J5/J6/J7 is 0.52, against 0.67 for Priority IK. Settings that solve proximal faults fail distal ones, and the reverse. Priority IK uses one setting for every joint.
+- **How decides whether where helps.** Guidance inside the sampler with a *weighted* internal correction lowers success in front of Priority IK (0.67 → 0.52 on the same 20 conditions); the same guidance with a *prioritized* internal correction raises it to 0.73 (33 : 57 episodes, p = 0.015), at 3.3× the inference time. Reversing the priority to orientation first lowers success whatever the damping (0.55 and 0.52).
 - **Limitation.** The fault description must be accurate. A 0.01 rad error in the assumed lock angle already drops success from 0.67 to 0.39.
 
 ## Problem and methods
@@ -38,6 +38,7 @@ Left: Bowl-Stove, joint 7 locked. Right: Soup, joint 3 locked. Full video: <a hr
 - Four LIBERO tasks (two from LIBERO-Object, two from LIBERO-Spatial), Franka Panda, 50 demonstrations per task.
 - Joint-position control at 20 Hz.
 - Diffusion Policy in joint space: DDPM with 100 steps, horizon 16, 8 steps executed per replanning.
+- Healthy (no-fault) success on the evaluation seeds: Soup 0.85, Milk 0.80, Bowl-Ramekin 0.70, Bowl-Stove 0.85.
 
 **Faults** (one joint at a time, onset at the episode's initial joint angle):
 
@@ -93,6 +94,14 @@ All numbers are success rates over the same 20 test seeds (10000–10019) for ev
 | locked | 0.11 | 0.12 | 0.16 | 0.19 | 0.31 | 0.30 | 0.32 | **0.48** | 0.43 |
 | all 112 | 0.37 | 0.35 | – | 0.41 | – | 0.52 | 0.48 | **0.60** | 0.60 |
 
+Condition-level statistics (bootstrap CIs over conditions, sign and Wilcoxon tests with Holm correction, and a
+mixed-effects logistic model with condition and episode effects) are in `paper/tables/tab_stats_condition.csv` and
+`tab_glmm.csv`. They agree in direction with the paired counts but are more conservative. With Holm correction over
+all rows, the condition-level tests stay significant against B1 (moderate to locked), RG-DDPM and W-IK pose (locked
+and overall) and E-C-I (overall). Against W-IK pos they do not (overall Wilcoxon p = 0.064), although the bootstrap
+95% CI of the mean difference excludes zero (+0.03 to +0.12) and the mixed model agrees from moderate faults on.
+Against Best W-IK there is no overall difference, and at the mild level Priority IK is worse.
+
 † Best W-IK picks the better of W-IK pos and W-IK pose for each condition after seeing the results. It is a reference, not an upper bound. Over all 112 conditions the paired counts (Priority IK only : other only) are 373:199 against W-IK pos (p = 3e-13), 408:137 against W-IK pose (p = 3e-32) and 231:225 against Best W-IK (p = 0.81). Condition-level tests that do not treat episodes of different conditions as independent are in `paper/tables/tab_stats_condition.csv`.
 
 <p align="center"><img src="paper/figs/fig_methods_by_level.png" width="95%" alt="Success rate per fault level"></p>
@@ -133,6 +142,33 @@ Selecting among samples does not address the fault, and denoising-time guidance 
 
 - **Reversed order:** reversing the priority costs most where position and orientation conflict (J6, J7).
 - **Added guidance:** guidance inside the sampler hurts even with Priority IK at execution. RG-DDPM's internal correction is itself a weighted pose IK, so it bakes the J6/J7 trade-off into the trajectory before the post-hoc step can undo it.
+
+### Weighted IK over its parameters (locked, 4 tasks × J1, J3, J5, J6, J7)
+
+<p align="center"><img src="paper/figs/fig_wik_sweep.png" width="70%" alt="W-IK sweep"></p>
+
+| W-IK setting | proximal (J1, J3) | distal (J6, J7) | mean (20) | Prio : W-IK |
+|---|---|---|---|---|
+| w_r 0.05, ρ 0.1 (W-IK pos) | 0.28 | 0.39 | 0.41 | 148 : 45 |
+| w_r 0.1, ρ 0.1 | 0.39 | 0.40 | 0.47 | 125 : 45 |
+| w_r 0.3, ρ 0.1 | 0.60 | 0.24 | 0.51 | 102 : 38 |
+| w_r 1.0, ρ 0.1 (W-IK pose) | 0.69 | 0.06 | 0.45 | 120 : 31 |
+| w_r 0.3, ρ 0 | 0.86 | 0.09 | 0.52 | 78 : 17 |
+| **Priority IK** | **0.84** | **0.46** | **0.67** | – |
+
+Removing the posture term (ρ = 0) solves the proximal faults at any weight but collapses the distal ones: what kept
+W-IK pos alive on J6/J7 was the posture term limiting joint motion, not the weight. All nine settings
+(`paper/tables/tab_wik_sweep.csv`) are below Priority IK with p < 1e-7.
+
+| Variant (same 20 conditions) | proximal | distal | mean | Prio : variant |
+|---|---|---|---|---|
+| Priority IK | 0.84 | 0.46 | 0.67 | – |
+| Orientation first, position damped 0.2 / 0.01 | 0.87 / 0.84 | 0.21 / 0.13 | 0.55 / 0.52 | 74 : 26 / 81 : 20 |
+| RG-DDPM (weighted internal) + Priority IK | 0.78 | 0.14 | 0.52 | 86 : 25 |
+| RG-DDPM (prioritized internal) + Priority IK | 0.81 | 0.58 | **0.73** | 33 : 57 (p = 0.015) |
+
+Inference time per policy call (5 parallel environments, RTX 3080; `paper/tables/tab_latency.csv`): B1 976 ms,
+W-IK +21 to +66 ms, Priority IK +130 ms, RG-DDPM +2.3 s.
 
 ### Fresh-seed replication (n = 50, seeds 10020–10069)
 

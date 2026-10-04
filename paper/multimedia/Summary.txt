@@ -1,0 +1,6 @@
+The video shows a pretrained joint-space diffusion policy on a Franka Panda with one joint locked,
+corrected at inference time without retraining. For each scenario, the same episode is executed
+with no correction (B1), weighted inverse kinematics with two orientation weights (W-IK pos, W-IK
+pose), and position-first task-priority IK (Priority IK). It illustrates the paper's finding that
+how the residual end-effector error is split between position and orientation decides the outcome,
+and closes with a fault that no inference-time correction can recover.

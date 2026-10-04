@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\caption{Order, damping and prioritized-guidance variants on locked J1, J3, J5, J6, J7 (4 tasks).}
+\label{tab:ablation_ext}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lccccccc}
+\toprule
+Variant & J1 & J3 & J5 & J6 & J7 & Mean (20) & Prio:variant \\
+\midrule
+Priority IK & 0.80 & 0.88 & 0.76 & 0.53 & 0.39 & 0.67 & -- \\
+Orientation-first ($\lambda$ on position 0.2) & 0.86 & 0.88 & 0.60 & 0.28 & 0.14 & 0.55 & 74:26 ($1.7\times10^{-6}$) \\
+Orientation-first ($\lambda$ on position 0.01) & 0.83 & 0.86 & 0.65 & 0.16 & 0.09 & 0.52 & 81:20 ($6.9\times10^{-10}$) \\
+RG-DDPM (weighted internal) + Priority IK & 0.65 & 0.90 & 0.76 & 0.23 & 0.05 & 0.52 & 86:25 ($5.0\times10^{-9}$) \\
+RG-DDPM (prioritized internal) + Priority IK & 0.81 & 0.81 & 0.88 & 0.63 & 0.53 & 0.73 & 33:57 (0.015) \\
+RG-DDPM (weighted internal) + W-IK pose & 0.44 & 0.81 & 0.75 & 0.11 & 0.05 & 0.43 & 124:29 ($3.4\times10^{-15}$) \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -27,7 +27,7 @@ DIRS = {"b1": "libero_fault_sweep_locked_b1", "pos": "libero_fault_sweep_locked_
         "rg": "libero_fault_sweep_locked_rg"}
 SPECS = [
     dict(id="A_distal", joints=[7, 6], contrast=["pose"], prefer=("bowl_stove", 7), paper=True),
-    dict(id="B_proximal", joints=[1, 3], contrast=["pos"], prefer=None, paper=True),
+    dict(id="B_proximal", joints=[1, 3], contrast=["pos"], prefer=("alphabet_soup", 3), paper=True),
     dict(id="C_proximal", joints=[1, 3], contrast=["pos", "pose"], prefer=("bowl_stove", 1), paper=False),
     dict(id="D_unrecoverable", joints=[2, 4], contrast=None, prefer=None, paper=False,
          note="kinematically unrecoverable: no method succeeds"),

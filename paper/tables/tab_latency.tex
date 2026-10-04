@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{Wall-clock time per policy call (one 16-step chunk for 5 parallel environments, 8 steps executed), Bowl-Stove J7 locked, NVIDIA GeForce RTX 3080.}
+\label{tab:latency}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lcccc}
+\toprule
+Method & mean [ms] & median & p95 & vs B1 \\
+\midrule
+B1 & 976 & 977 & 982 & +0 \\
+W-IK pos & 997 & 997 & 1000 & +21 \\
+W-IK pose & 1042 & 1035 & 1107 & +66 \\
+Priority IK & 1105 & 1105 & 1109 & +130 \\
+RG-DDPM & 3230 & 3234 & 3249 & +2255 \\
+\bottomrule
+\end{tabular}
+\end{table}
