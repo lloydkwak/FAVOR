@@ -16,4 +16,4 @@ Contents
   - Soup, joint 2 locked, seed 10000 (kinematically unrecoverable: no method succeeds)
 
 All shown episodes are re-rendered from the evaluation sweep and reproduce its recorded
-outcomes. Code: https://github.com/lloydkwak/FAVOR
+outcomes. Code: provided with the manuscript (anonymized for review)
