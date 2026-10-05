@@ -1,5 +1,5 @@
 """
-RG-DDPM internal-correction variants (revision runs), separating HOW the internal correction
+RG-DDPM internal-correction variants (additional runs), separating HOW the internal correction
 splits the error from HOW FAR it may move the healthy joints.
 
 Identical to reach_guided.reach_correct (same reachability test, same healthy-chart
@@ -13,7 +13,7 @@ to a reachable pose on the faulty robot:
   budget=0.3         every healthy joint clamped to within 0.3 rad of the policy's waypoint
                      (the same 0.3 rad that the reachability test uses)
 
-Revision methods: rg_prioint (prio, no budget), rg_prioint_b03 (prio, budget 0.3),
+Methods: rg_prioint (prio, no budget), rg_prioint_b03 (prio, budget 0.3),
 rg_wint_nob (weighted, no budget).
 """
 import functools

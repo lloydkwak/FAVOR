@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Reviewer-requested runs, most important first. Every step skips outputs that already exist,
+# Additional runs, most important first. Every step skips outputs that already exist,
 # so the queue can be stopped and restarted at any point.
 #   usage: ./run_revision_queue.sh [step ...]      (default: all steps below, in this order)
-#   steps: nofault, wik_* / prio_rev_l001 / rg_prioint (method names), latency, qual, package, analysis
+#   steps: method names (nofault*, wik_*, prio_rev_l001, prio_l2_*, midg_*, rg_*), ikconv, latency, qual, qual_d,
+#          package, analysis
 set -uo pipefail
 cd "$(dirname "$0")"
 DC="docker compose -f docker/docker-compose.libero.yml run --rm libero bash -c"
@@ -12,20 +13,26 @@ TASKS="alphabet_soup milk bowl_ramekin bowl_stove"
 # round 2 (done): healthy n=100, W-IK rho=0 with Priority IK's damping, RG budget/weighting split, RG on moderate range
 #          faults, failure-case video from a camera that keeps the arm in view. rg_prioint_b03 was stopped before
 #          Bowl-Stove (15/20 conditions) once the budget effect was resolved; the analysis reports it as partial.
-DEFAULT="nofault100 wik_w030_r000_dm4 rg_prioint_b03 rg_wint_nob rg_prioint:moderate qual_d package analysis"
+# round 3: policy-free IK convergence/residuals, Priority IK lambda_2 sweep, mid-episode (grasp-triggered) lock onset,
+#          W-IK toward the lexicographic limit (w_r 0.01 / 0.001, 300 iterations)
+DEFAULT="ikconv prio_l2_005 prio_l2_050 prio_l2_100 midg_b1 midg_prio midg_pos midg_pose wik_w001_r000_dm4
+         wik_w001_r000_dm4_it300 wik_w0001_r000_dm4_it300 prio_l2_010 analysis"
 STEPS=${*:-$DEFAULT}
 filt() { stdbuf -oL tr '\r' '\n' | grep --line-buffered -aE "$1" | grep --line-buffered -v BrokenPipe; }
 
 for s in $STEPS; do
   echo "=== [$(date '+%m-%d %H:%M')] $s ==="
   case $s in
-    nofault*|wik_w*|prio_rev_l001|rg_*)
+    nofault*|wik_w*|prio_rev_l001|prio_l2_*|midg_*|rg_*)
       m=${s%%:*}; lvl=""; [[ "$s" == *:* ]] && lvl=${s#*:}
       for t in $TASKS; do
         $DC "pip install pytorch_kinematics --break-system-packages -q 2>&1 | tail -1
              cd /workspace/diffusion_policy && python -u /workspace/docker/run_libero_revision.py $m $t $lvl" 2>&1 \
           | filt "^RESULT|^SKIP|^DONE|Error|Traceback" || echo "!!! FAILED: $s $t"
       done ;;
+    ikconv) # policy-free, CPU: solver residuals at 30 vs 300 iterations on demonstration waypoints
+      $DC "pip install pytorch_kinematics --break-system-packages -q 2>&1 | tail -1
+           cd /workspace && python -u scripts_libero/ik_convergence.py" 2>&1 | filt "^  |cells|IKCONV_DONE|Error|Traceback" ;;
     latency)
       $DC "pip install pytorch_kinematics --break-system-packages -q 2>&1 | tail -1
            cd /workspace/diffusion_policy && python -u /workspace/docker/bench_latency.py bowl_stove 7" 2>&1 \
@@ -46,7 +53,8 @@ for s in $STEPS; do
     analysis)
       python scripts_paper/make_paper_figures.py --results results --out paper | tail -2
       python scripts_paper/revision_analysis.py --results results --out paper --glmm
-      python scripts_paper/export_episodes.py ;;
+      python scripts_paper/export_episodes.py
+      [ -f analysis_out/ik_convergence.md ] && cp analysis_out/ik_convergence.md analysis_out/ik_convergence.csv paper/analysis/ ;;
     *) echo "unknown step $s" ;;
   esac
 done

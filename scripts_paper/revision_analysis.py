@@ -1,5 +1,5 @@
 """
-Revision analyses (reviewer requests), from results/ only. Missing inputs are skipped.
+Additional analyses, from results/ only. Missing inputs are skipped.
 
   tab_nofault          healthy (no-fault) success per task                   results/libero_nofault
   tab_wik_sweep        W-IK over w_r and rho vs Priority IK (locked J1,3,5,6,7 x 4 tasks)
@@ -130,13 +130,18 @@ def nofault(R, OUT, rep):
         rep.append("tab_nofault")
 
 
+WIK_RE = r"wik_w(\d{3,4})_r(\d{3})(?:_dm(\d))?(?:_it(\d+))?$"
+
+
 def _wik_dirs(R):
-    cfgs = {(w, r, None): d for (w, r), d in EXISTING_WIK.items()}
+    """(w_r, rho, damping exponent or None, iterations or None) -> result dir."""
+    cfgs = {(w, r, None, None): d for (w, r), d in EXISTING_WIK.items()}
     for d in glob.glob(os.path.join(R, SWEEP_DIR.format("wik_w*_r*"))):
-        m = re.search(r"wik_w(\d{3})_r(\d{3})(?:_dm(\d))?$", d)
+        m = re.search(WIK_RE, d)
         if m:
-            cfgs[(int(m.group(1)) / 100, int(m.group(2)) / 100,
-                  int(m.group(3)) if m.group(3) else None)] = os.path.basename(d)
+            w = int(m.group(1)) / (100 if len(m.group(1)) == 3 else 1000)
+            cfgs[(w, int(m.group(2)) / 100, int(m.group(3)) if m.group(3) else None,
+                  int(m.group(4)) if m.group(4) else None)] = os.path.basename(d)
     return cfgs
 
 
@@ -146,23 +151,24 @@ def wik_sweep(R, data, OUT, rep):
         print("  wik sweep: no new configs yet -> skipped"); return
     P = {(t, j): data.get(("locked", t, j, "prio")) for t in M.TASKS for j in JR}
     rows, curves = [], {}
-    for (w, rho, dm), d in sorted(cfgs.items(), key=lambda kv: (kv[0][2] is not None, -kv[0][1], kv[0][0])):
+    for (w, rho, dm, it), d in sorted(cfgs.items(), key=lambda kv: (kv[0][2] is not None, kv[0][3] or 30,
+                                                                    -kv[0][1], kv[0][0])):
         recs = {(t, j): M.load(os.path.join(R, d, M.fname("locked", t, j))) for t in M.TASKS for j in JR}
         if any(score(r) is None for r in recs.values()):
-            print(f"  wik sweep w={w} rho={rho} dm={dm}: incomplete -> skipped"); continue
+            print(f"  wik sweep w={w} rho={rho} dm={dm} it={it}: incomplete -> skipped"); continue
         perj = {j: np.mean([recs[(t, j)]["score"] for t in M.TASKS]) for j in JR}
         allm = np.mean([r["score"] for r in recs.values()])
         b, c = pooled(P, recs)
         dif = [P[k]["score"] - recs[k]["score"] for k in recs]
         damp = "$10^{-6}$" if dm is None else f"$10^{{-{dm}}}$"
-        rows.append([f"{w:.2f}", f"{rho:.2f}", damp] + [M.r2(perj[j]) for j in JR] + [M.r2(allm),
+        rows.append([f"{w:g}", f"{rho:.2f}", damp, str(it or 30)] + [M.r2(perj[j]) for j in JR] + [M.r2(allm),
                      f"{b}:{c} ({M.fmt_p(M.mcnemar(b, c))})", f"{sum(x > 0 for x in dif)}/{sum(x < 0 for x in dif)}"])
-        if dm is None:
+        if dm is None and it is None:
             curves[(w, rho)] = dict(prox=np.mean([perj[1], perj[3]]), dist=np.mean([perj[6], perj[7]]), all=allm)
     pj = {j: np.mean([P[(t, j)]["score"] for t in M.TASKS]) for j in JR}
-    rows.append(["\\multicolumn{3}{l}{Priority IK ($\\lambda_1^2{=}10^{-4}$)}"] + [M.r2(pj[j]) for j in JR] +
+    rows.append(["\\multicolumn{4}{l}{Priority IK ($\\lambda_1^2{=}10^{-4}$, 30 it.)}"] + [M.r2(pj[j]) for j in JR] +
                 [M.r2(np.mean([p["score"] for p in P.values()])), "--", "--"])
-    M.write_table(OUT, "tab_wik_sweep", ["$w_r$", "$\\rho$", "damping", "J1", "J3", "J5", "J6", "J7", "Mean (20)",
+    M.write_table(OUT, "tab_wik_sweep", ["$w_r$", "$\\rho$", "damping", "iter.", "J1", "J3", "J5", "J6", "J7", "Mean (20)",
                                          "Prio:W-IK", "cond. +/-"], rows,
                   "Weighted IK over the orientation weight $w_r$, posture weight $\\rho$ and Levenberg--Marquardt "
                   "damping on locked faults, 4 tasks $\\times$ J1, J3, J5, J6, J7. J2 and J4 are excluded because every "
@@ -493,6 +499,259 @@ def fig3_outliers(R, data, layer1, OUT, rep):
     rep.append("analysis/fig3_outliers.md")
 
 
+# ---------------------------------------------------------------- round 3
+def _sweep_row(P, recs, lab):
+    perj = [M.r2(np.mean(v)) if (v := [recs[k]["score"] for k in recs if k[1] == j]) else "--" for j in JR]
+    b, c = pooled({k: P[k] for k in recs}, recs)
+    dif = [P[k]["score"] - recs[k]["score"] for k in recs if P.get(k)]
+    return [lab] + perj + [M.r2(np.mean([r["score"] for r in recs.values()])),
+                           f"{b}:{c} ({M.fmt_p(M.mcnemar(b, c))})",
+                           f"{sum(x > 0 for x in dif)}/{sum(x < 0 for x in dif)}"]
+
+
+def prio_lam2(R, data, OUT, rep):
+    """Priority IK's secondary damping lambda_2 (main runs: 0.2) on locked J1, J3, J5, J6, J7."""
+    P = {(t, j): data.get(("locked", t, j, "prio")) for t in M.TASKS for j in JR}
+    found = []
+    for d in glob.glob(os.path.join(R, SWEEP_DIR.format("prio_l2_*"))):
+        m = re.search(r"prio_l2_(\d{3})$", d)
+        if m:
+            found.append((int(m.group(1)) / 100, os.path.basename(d)))
+    if not found:
+        return
+    rows = []
+    for lam, d in sorted(found + [(0.2, None)]):
+        if d is None:
+            recs = {k: v for k, v in P.items() if v}
+            rows.append([f"{lam:g} (main)"] + _sweep_row(P, recs, "")[1:-2] + ["--", "--"]); continue
+        recs = {(t, j): M.load(os.path.join(R, d, M.fname("locked", t, j))) for t in M.TASKS for j in JR}
+        recs = {k: v for k, v in recs.items() if score(v) is not None}
+        if len(recs) < len(JR) * len(M.TASKS) // 2:
+            print(f"  prio lam2 {lam}: {len(recs)} conditions -> skipped"); continue
+        lab = f"{lam:g}" + ("" if len(recs) == 20 else f"$^\\dagger$ ({len(recs)}/20)")
+        rows.append(_sweep_row(P, recs, lab))
+    M.write_table(OUT, "tab_prio_lam2", ["$\\lambda_2$", "J1", "J3", "J5", "J6", "J7", "Mean", "0.2:variant",
+                                         "cond. +/-"], rows,
+                  "Priority IK over its secondary (orientation) damping $\\lambda_2$ on locked faults, 4 tasks $\\times$ "
+                  "J1, J3, J5, J6, J7. All other settings as in the main runs ($\\lambda_1 = 0.01$, 30 iterations). "
+                  "Paired = episodes only $\\lambda_2{=}0.2$ solved : only the variant solved. $^\\dagger$Incomplete.",
+                  "tab:prio_lam2")
+    rep.append("tab_prio_lam2")
+
+
+MID = [("midg_b1", "B1"), ("midg_pos", "W-IK pos"), ("midg_pose", "W-IK pose"), ("midg_prio", "Priority IK")]
+
+
+def mid_onset(R, OUT, rep):
+    """Joint locks 10 control steps after the first gripper-close command (mid-episode)."""
+    recs = {m: {(t, j): M.load(os.path.join(R, SWEEP_DIR.format(m), M.fname("locked", t, j)))
+                for t in M.TASKS for j in JR} for m, _ in MID}
+    recs = {m: {k: v for k, v in r.items() if score(v) is not None} for m, r in recs.items()}
+    if not recs["midg_prio"]:
+        return
+    P = recs["midg_prio"]
+    rows, steps, n_ep, n_on = [], [], 0, 0
+    for m, lab in MID:
+        r = recs[m]
+        if not r:
+            continue
+        common = {k: v for k, v in r.items() if k in P}
+        perj = [M.r2(np.mean(v)) if (v := [r[k]["score"] for k in r if k[1] == j]) else "--" for j in JR]
+        row = [lab + ("" if len(r) == 20 else f"$^\\dagger$ ({len(r)}/20)")] + perj + \
+              [M.r2(np.mean([v["score"] for v in r.values()]))]
+        if m == "midg_prio":
+            row.append("--")
+        else:
+            b, c = pooled({k: P[k] for k in common}, common)
+            row.append(f"{b}:{c} ({M.fmt_p(M.mcnemar(b, c))})")
+        rows.append(row)
+        if m == "midg_b1":                     # onset is identical across methods (same samples before it)
+            for v in r.values():
+                for w in v["raw"].get("onset_steps_per_worker") or []:
+                    if isinstance(w, list):
+                        n_ep += len(w); on = [x for x in w if x is not None]; n_on += len(on); steps += on
+    cap = ("Mid-episode onset: the joint runs healthy and locks 10 control steps (0.5~s) after the policy's first "
+           "gripper-close command, at the angle it has at that moment; the correcting methods re-read the fault "
+           "before every policy call, so the first chunk after the onset can be executed uncorrected. Locked "
+           "J1, J3, J5, J6, J7, 4 tasks, same seeds. Paired = episodes only Priority IK solved : only the method solved.")
+    if n_ep:
+        cap += (f" The onset occurred in {n_on} of {n_ep} episodes (median step {int(np.median(steps))}"
+                f", range {min(steps)}--{max(steps)}); in the others the gripper never closed and no fault occurred.")
+    M.write_table(OUT, "tab_mid_onset", ["Method", "J1", "J3", "J5", "J6", "J7", "Mean", "Prio:method"], rows,
+                  cap, "tab:mid_onset")
+    rep.append("tab_mid_onset")
+
+
+def _resid(rec):
+    """(pos mm, rot deg, max |dq| rad) of the executed corrections, from the run's own log."""
+    raw = (rec or {}).get("raw") or {}
+    st = raw.get("ik_stats") or raw.get("prio_stats") or raw.get("stats") or {}
+    if "pos_err_after_mean" in st:
+        return 1000 * st["pos_err_after_mean"], np.degrees(st["rot_err_after_mean"]), st.get("dq_free_max_mean")
+    if "pos_after" in st:
+        return 1000 * st["pos_after"], np.degrees(st["rot_after"]), st.get("dq")
+    return None
+
+
+def residuals(R, data, OUT, rep):
+    """Final end-effector residual of the executed correction (logged during the rollouts)."""
+    groups = {"prox.": (1, 3), "dist.": (6, 7)}
+    cfgs = [("W-IK", (w, rho, dm, it), d) for (w, rho, dm, it), d in _wik_dirs(R).items()]
+    cfgs.sort(key=lambda c: (c[1][2] is not None, c[1][3] or 30, -c[1][1], c[1][0]))
+    rows = []
+    for kind, key, d in cfgs + [("Prio", None, None)]:
+        if kind == "Prio":
+            recs = {(t, j): data.get(("locked", t, j, "prio")) for t in M.TASKS for j in JR}
+            lab = "Priority IK ($\\lambda_2$ 0.2)"
+        else:
+            w, rho, dm, it = key
+            recs = {(t, j): M.load(os.path.join(R, d, M.fname("locked", t, j))) for t in M.TASKS for j in JR}
+            lab = f"W-IK $w_r$ {w:g}, $\\rho$ {rho:g}" + (f", $10^{{-{dm}}}$" if dm else "") + (f", {it} it." if it else "")
+        row = [lab]
+        ok = False
+        for g, js in groups.items():
+            v = [_resid(recs[k]) for k in recs if k[1] in js and recs[k]]
+            v = [x for x in v if x is not None]
+            sc = [recs[k]["score"] for k in recs if k[1] in js and recs[k]]
+            if v:
+                ok = True
+                row += [f"{np.mean([x[0] for x in v]):.1f}", f"{np.mean([x[1] for x in v]):.1f}",
+                        f"{np.mean([x[2] for x in v if x[2] is not None]):.2f}" if any(x[2] is not None for x in v) else "--",
+                        M.r2(np.mean(sc)) if sc else "--"]
+            else:
+                row += ["--"] * 4
+        if ok:
+            rows.append(row)
+    if len(rows) < 2:
+        return
+    M.write_table(OUT, "tab_residuals", ["Method", "prox. pos [mm]", "rot [deg]", "max$|\\Delta q|$ [rad]", "success",
+                                         "dist. pos [mm]", "rot [deg]", "max$|\\Delta q|$ [rad]", "success"], rows,
+                  "End-effector residual left by the executed correction, logged during the locked rollouts (mean over "
+                  "corrected waypoints, then over conditions): proximal = J1, J3; distal = J6, J7; 4 tasks. "
+                  "max$|\\Delta q|$ = largest change of a healthy joint.", "tab:residuals")
+    rep.append("tab_residuals")
+
+
+def gee_check(data, OUT, rep):
+    """Frequentist cross-check of the mixed model: logistic GEE, episodes clustered by condition
+    (exchangeable working correlation, robust sandwich SE)."""
+    try:
+        import pandas as pd
+        import statsmodels.api as sm
+        import statsmodels.formula.api as smf
+    except Exception as e:
+        print(f"  GEE skipped ({e})"); return
+    rows = []
+    for level in ["all"] + LEVELS:
+        lv = LEVELS if level == "all" else [level]
+        for m, lab in [("b1", "B1"), ("eci", "E-C-I"), ("rg", "RG-DDPM"), ("pos", "W-IK pos"), ("pose", "W-IK pose")]:
+            recs = []
+            for L in lv:
+                for t in M.TASKS:
+                    for j in M.JOINTS:
+                        P, Q = data.get((L, t, j, "prio")), data.get((L, t, j, m))
+                        if not (P and Q and P["pe"] and Q["pe"]):
+                            continue
+                        c = f"{L}{t}{j}"
+                        recs += [dict(y=int(v > .5), prio=1, cond=c) for v in P["pe"].values()]
+                        recs += [dict(y=int(v > .5), prio=0, cond=c) for v in Q["pe"].values()]
+            if len(recs) < 200:
+                continue
+            df = pd.DataFrame(recs)
+            try:
+                fit = smf.gee("y ~ prio", "cond", df, family=sm.families.Binomial(),
+                              cov_struct=sm.cov_struct.Exchangeable()).fit()
+            except Exception as e:
+                print(f"  GEE {level} {m}: {e}"); continue
+            b, se, p = fit.params["prio"], fit.bse["prio"], fit.pvalues["prio"]
+            rows.append([level, lab, f"{b:+.2f}", f"{se:.2f}", f"[{b - 1.96 * se:+.2f}, {b + 1.96 * se:+.2f}]",
+                         f"{np.exp(b):.1f}", M.fmt_p(max(p, 1e-300))])
+    if rows:
+        M.write_table(OUT, "tab_gee", ["Level", "vs", "log-odds (Prio)", "robust SE", "95\\% CI", "odds ratio", "$p$"],
+                      rows, "Logistic GEE (success $\\sim$ method), episodes clustered by condition, exchangeable "
+                      "working correlation, robust (sandwich) standard errors: a frequentist cross-check of the "
+                      "variational mixed model.", "tab:gee")
+        rep.append("tab_gee")
+
+
+def _auc(score_pos, score_neg):
+    """P(score of a positive > score of a negative), ties count half."""
+    if not score_pos or not score_neg:
+        return float("nan")
+    a = np.array(score_pos)[:, None]; b = np.array(score_neg)[None, :]
+    return float(((a > b).sum() + 0.5 * (a == b).sum()) / (a.size * b.size))
+
+
+def diagnosis(R, data, layer1, OUT, rep, tip_m=0.10, thr_mm=10.0):
+    """Policy-free diagnosis as a classifier: does the kinematic error separate conditions with
+    success >= 0.5 from the rest? Position only, and a fingertip-point error that adds the lever
+    arm of the orientation error (pos + tip_m * rot), which also covers J7."""
+    if not os.path.exists(layer1):
+        return
+    import csv
+    rows_in = list(csv.DictReader(open(layer1)))
+    out = []
+    for target, mkey, col_p, col_r in [("B1", "b1", "override_pos_mm", "override_rot_deg"),
+                                        ("Priority IK", "prio", "ik_pos_mm", "ik_rot_deg")]:
+        xs, ys = {"pos": [], "tip": []}, []
+        for r in rows_in:
+            rec = data.get((r["level"], r["task"], int(r["joint"][-1]), mkey))
+            if not rec:
+                continue
+            pmm, rdeg = float(r[col_p]), float(r[col_r])
+            xs["pos"].append(pmm); xs["tip"].append(pmm + 1000 * tip_m * np.radians(rdeg)); ys.append(rec["score"])
+        ys = np.array(ys)
+        for k, lab in [("pos", "position error"), ("tip", f"fingertip error ({int(tip_m * 100)} cm)")]:
+            x = np.array(xs[k]); good = ys >= 0.5
+            auc = _auc(list(-x[good]), list(-x[~good]))
+            acc = float(np.mean((x <= thr_mm) == good))
+            out.append([target, lab, len(ys), f"{M.spearman(x, ys):+.2f}", f"{auc:.2f}", f"{acc:.2f}",
+                        f"{int(good.sum())}/{len(ys)}"])
+    if not out:
+        return
+    M.write_table(OUT, "tab_diagnosis", ["Outcome", "predictor", "conds", "Spearman", "AUC", f"acc. at {thr_mm:g} mm",
+                                         "success$\\geq$0.5"], out,
+                  "Policy-free kinematic diagnosis as a pre-deployment classifier over the 112 conditions. B1 is "
+                  "predicted from the error the fault causes (override); Priority IK from the error left after "
+                  "retargeting (residual). AUC: probability that a condition with success $\\geq 0.5$ has the smaller "
+                  "error. Fingertip error = position error + lever arm $\\times$ orientation error (in radians), "
+                  "which makes the J7 (pure yaw) faults visible.", "tab:diagnosis")
+    rep.append("tab_diagnosis")
+
+
+def mild_report(R, data, layer1, OUT, rep):
+    L1 = {}
+    if os.path.exists(layer1):
+        import csv
+        for r in csv.DictReader(open(layer1)):
+            L1[(r["level"], r["task"], int(r["joint"][-1]))] = r
+    lines = ["# Mild range faults: where Priority IK loses to W-IK pos", "",
+             "Per joint, mean over the 4 tasks. dq = mean largest change of a healthy joint in the executed "
+             "corrections (from the rollout logs); residual = policy-free W-IK residual (Layer1); paired = episodes "
+             "only Priority IK solved : only W-IK pos solved.", "",
+             "| joint | B1 | W-IK pos | W-IK pose | Priority IK | paired Prio:pos | Prio dq | W-IK pos dq | residual mm |",
+             "|---|---|---|---|---|---|---|---|---|"]
+    for j in M.JOINTS:
+        g = {m: [data.get(("mild", t, j, m)) for t in M.TASKS] for m in ("b1", "pos", "pose", "prio")}
+        mean = lambda m: "–" if not all(g[m]) else f"{np.mean([x['score'] for x in g[m]]):.2f}"
+        B = C = 0
+        for P, Q in zip(g["prio"], g["pos"]):
+            if P and Q and P["pe"] and Q["pe"]:
+                b, c = M.paired(P["pe"], Q["pe"]); B += b; C += c
+        dq = lambda m: [r[2] for r in (_resid(x) for x in g[m]) if r and r[2] is not None]
+        res = [float(L1[("mild", t, j)]["ik_pos_mm"]) for t in M.TASKS if ("mild", t, j) in L1]
+        f = lambda v: "–" if not v else f"{np.mean(v):.3f}"
+        lines.append(f"| J{j} | {mean('b1')} | {mean('pos')} | {mean('pose')} | {mean('prio')} | {B}:{C} | "
+                     f"{f(dq('prio'))} | {f(dq('pos'))} | {'–' if not res else f'{np.mean(res):.1f}'} |")
+    lines += ["", "Reading guide: at the mild level the fault often binds only briefly and the healthy trajectory is "
+              "nearly reachable. If Priority IK's dq is much larger than W-IK pos's on the joints where it loses, the "
+              "loss comes from moving healthy joints far from the policy's posture to remove a small error (W-IK pos "
+              "keeps the posture via rho); the posture term that hurts on locked distal faults helps here.", ""]
+    os.makedirs(os.path.join(OUT, "analysis"), exist_ok=True)
+    open(os.path.join(OUT, "analysis", "mild_level.md"), "w").write("\n".join(lines))
+    rep.append("analysis/mild_level.md")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default="results")
@@ -510,6 +769,13 @@ def main():
     latency(a.results, a.out, rep)
     j4_report(a.results, data, a.layer1, a.out, rep)
     fig3_outliers(a.results, data, a.layer1, a.out, rep)
+    prio_lam2(a.results, data, a.out, rep)
+    mid_onset(a.results, a.out, rep)
+    residuals(a.results, data, a.out, rep)
+    if a.glmm:
+        gee_check(data, a.out, rep)
+    diagnosis(a.results, data, a.layer1, a.out, rep)
+    mild_report(a.results, data, a.layer1, a.out, rep)
     print("wrote:", ", ".join(rep))
 
 

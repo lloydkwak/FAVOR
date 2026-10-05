@@ -58,7 +58,7 @@ The policy outputs a chunk of joint targets $q^\star$, which the faulted robot c
 | Where | Method | Idea | Code |
 |---|---|---|---|
 | none | **B1** | send the policy output as is | `docker/native_joint_policy.py` |
-| sample selection | **Random-N**, **Select** | draw N=32 samples; pick at random or by a feasibility certificate | `native_joint_policy.py`, `fault_certificate.py` |
+| sample selection | **Random-N**, **Select** | draw N=32 samples; pick one at random (Random-N) or the one with the smallest end-effector discrepancy on the faulted robot (Select) | `native_joint_policy.py`, `fault_certificate.py` |
 | during denoising | **E-C-I** | project each denoising step onto the fault constraint | `joint_eci_projector.py` |
 | during denoising | **RG-DDPM** | reachability-guided sampling | `reach_guided.py`, `native_joint_policy_rg.py` |
 | after sampling | **W-IK pos / pose** | weighted IK on the 6 healthy joints toward the end-effector pose implied by $q^\star$ | `ik_redistribution.py` |
@@ -118,7 +118,7 @@ Selecting among samples does not address the fault, and denoising-time guidance 
   <img src="paper/figs/fig_severity_curves.png" width="48%" alt="Success vs fault severity">
 </p>
 
-- **Distal faults (J6, J7):** position and orientation conflict. W-IK pose gives up centimetres of position to fix orientation and fails (0.07 / 0.05). W-IK pos keeps position but ignores orientation.
+- **Distal faults (J6, J7):** position and orientation conflict. W-IK pose gives up centimetres of position to fix orientation and fails (0.08 / 0.05). W-IK pos keeps position but ignores orientation.
 - **Proximal faults (J1, J3):** the trade-off reverses, and W-IK pos fails.
 - **Priority IK** handles both with one setting (J1 0.80, J3 0.88, J6 0.53, J7 0.39).
 - **J2 and J4** (shoulder and elbow pitch) cannot be compensated by any method when locked.
@@ -141,7 +141,7 @@ Selecting among samples does not address the fault, and denoising-time guidance 
 | Orientation-first priority | task order reversed | 0.28 | 0.14 | 0.39 | 74 : 26 (p = 1.7e-6) |
 | RG-DDPM + Priority IK | sampling-time guidance added | 0.23 | 0.05 | 0.37 | 86 : 27 (p = 2.3e-8) |
 | RG-DDPM | guidance + weighted IK (pose) | 0.11 | 0.05 | 0.31 | 124 : 30 (p = 8.9e-15) |
-| W-IK pose | weighted IK | 0.07 | 0.05 | 0.32 | 120 : 31 (p = 1.5e-13) |
+| W-IK pose | weighted IK | 0.08 | 0.05 | 0.32 | 120 : 31 (p = 1.5e-13) |
 
 - **Reversed order:** reversing the priority costs most where position and orientation conflict (J6, J7).
 - **Added guidance:** RG-DDPM's guidance hurts even with Priority IK at execution. Its internal correction is a weighted pose IK anchored to the policy's posture, so it bakes the J6/J7 trade-off into the trajectory before the post-hoc step can undo it. Without that anchor the guidance no longer hurts (next section).
@@ -245,7 +245,8 @@ The policy itself is not the bottleneck; recovering the intended end-effector mo
 ```
 docker/                       environment (Dockerfile.libero, compose) and all method / runner code
   assets/franka_panda.urdf      Panda kinematics used by every IK method (FK matches the sim to ~1 mm)
-  fault_injector.py             locked / range_reduced / velocity_limited faults in MuJoCo
+  fault_injector.py             locked / range_reduced faults in MuJoCo (velocity_limited is implemented but not
+                                evaluated); optional mid-episode onset (lock after the first grasp)
   favor_fault_runner.py         LIBERO rollout runner with fault injection and per-episode logging
   native_joint_policy*.py       policy wrappers: B1, Select, Random-N, E-C-I, W-IK, Priority IK, RG-DDPM, misspecification
   ik_redistribution.py          weighted IK (W-IK)
@@ -253,8 +254,9 @@ docker/                       environment (Dockerfile.libero, compose) and all m
   render_recorder.py            optional recorder for qualitative media (does not change what the policy sees)
   render_qualitative.py         re-runs selected sweep episodes with rendering on and checks them against the sweep
   run_libero_fault_sweep_*.py   sweep runners (one JSON per condition, per-episode success)
-  run_libero_revision.py        revision runs: healthy success, W-IK w_r/rho sweep, order/damping and
-                                prioritized-guidance variants (reach_guided_prio.py); bench_latency.py = per-call timing
+  run_libero_revision.py        additional runs: healthy success, W-IK w_r/rho/iteration sweep, order/damping and
+                                prioritized-guidance variants (reach_guided_prio.py), Priority IK lambda_2 sweep,
+                                mid-episode onset (midg_*); bench_latency.py = per-call timing
   sweep_grid_libero*.py         task / joint / severity grids and the fixed test seeds
   tests/                        unit tests (E-C-I projection, Priority IK, priority order)
 third_party/                  pinned upstream commits + patch to diffusion_policy (joint-space configs)
@@ -308,8 +310,10 @@ docker compose -f docker/docker-compose.libero.yml run --rm -v $PWD/analysis_out
     python /workspace/scripts_libero/ik_select_and_layer1v2.py   # kinematic analysis -> analysis_out/layer1_v2.csv
 
 python scripts_paper/make_paper_figures.py --results results --out paper   # figures and tables (host: numpy + matplotlib)
-./run_revision_queue.sh                       # reviewer-requested runs: healthy success, W-IK w_r/rho sweep,
-                                              # order/damping and prioritized-guidance variants, latency, failure-case video
+./run_revision_queue.sh                       # additional runs: healthy success, W-IK w_r/rho sweep,
+                                              # order/damping and prioritized-guidance variants, latency, failure-case video,
+                                              # Priority IK lambda_2 sweep, mid-episode lock onset, W-IK at w_r 0.01/0.001
+                                              # with 300 iterations, policy-free IK convergence (scripts_libero/ik_convergence.py)
 python scripts_paper/revision_analysis.py --results results --out paper --glmm   # their tables, figure and analyses
 python scripts_paper/export_episodes.py       # every episode outcome -> paper/data/episodes.csv (+ layer1_v2.csv)
 ./run_qual_media.sh                           # qualitative figures + videos (re-renders sweep seeds, checks them)

@@ -155,6 +155,11 @@ class NativeJointPolicy:
         for b, info in enumerate(infos):
             ftype = info['fault_type']
             if ftype is None:
+                if getattr(self, 'refresh_fault_spec', False) and self.fault_joint_name is not None:
+                    # mid-episode onset, fault not active yet: no bound at all on the joint, so the
+                    # correction never triggers and the policy acts exactly like B1
+                    jidx = JOINT_NAME_TO_IDX[self.fault_joint_name]
+                    q_lo[b, jidx], q_hi[b, jidx] = -1e6, 1e6
                 continue
             jidx = JOINT_NAME_TO_IDX[self.fault_joint_name]
             q_onset = info['q_lock']
@@ -180,7 +185,8 @@ class NativeJointPolicy:
             return self.static_fault_spec
         if self.env_ref is None:
             return None
-        if self._dynamic_fault_spec is None:
+        if self._dynamic_fault_spec is None or getattr(self, 'refresh_fault_spec', False):
+            # refresh_fault_spec (mid-episode onset): re-read the fault state before every call
             self._dynamic_fault_spec = self._build_dynamic_fault_spec()
         return self._dynamic_fault_spec
 

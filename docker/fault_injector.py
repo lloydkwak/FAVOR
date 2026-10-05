@@ -24,9 +24,24 @@ JOINT_NAMES = [f"robot0_joint{i}" for i in range(1, 8)]
 
 
 class FaultInjector(gym.Wrapper):
-    def __init__(self, env, joint_name: str, fault_type: str, severity: float = None):
+    def __init__(self, env, joint_name: str, fault_type: str, severity: float = None, onset=None):
+        """onset: None (default, every sweep) -> the fault is active from reset() on, locked at the
+        initial angle. 'grasp+K' -> locked faults only: the joint runs healthy until K control steps
+        after the first gripper-close command, then locks at the angle it has at that moment
+        (mid-episode onset). Before the onset get_fault_info() reports no fault, so a policy that
+        refreshes its fault spec every call behaves exactly like B1 until then."""
         super().__init__(env)
         assert fault_type in (None, 'locked', 'range_reduced', 'velocity_limited')
+        self.onset = onset
+        self._onset_delay = None
+        if onset is not None:
+            assert fault_type == 'locked', 'mid-episode onset is implemented for locked faults only'
+            assert str(onset).startswith('grasp'), onset
+            self._onset_delay = int(str(onset)[len('grasp+'):] or 0) if '+' in str(onset) else 0
+        self._t = 0
+        self._close_t = None
+        self._active = onset is None
+        self.onset_log = []          # per episode: onset step (None if the gripper never closed)
         self.joint_name = joint_name
         self.fault_type = fault_type
         self.severity = severity
@@ -47,7 +62,7 @@ class FaultInjector(gym.Wrapper):
         # [fault_active(0/1), joint_idx(0-6, -1 if none), fault_type_code, q_lock_or_center, severity]
         # fault_type_code: 0=locked, 1=range_reduced, 2=velocity_limited, -1=none
         type_code = {'locked': 0.0, 'range_reduced': 1.0, 'velocity_limited': 2.0}.get(self.fault_type, -1.0)
-        active = 1.0 if self.fault_type is not None else 0.0
+        active = 1.0 if (self.fault_type is not None and self._active) else 0.0
         joint_idx = float(self.joint_idx) if self.joint_idx is not None else -1.0
         q_val = float(self._q_onset) if self._q_onset is not None else 0.0
         sev = float(self.severity) if self.severity is not None else 0.0
@@ -112,6 +127,8 @@ class FaultInjector(gym.Wrapper):
         from the main process (where the policy lives) at any time, not tied to
         the obs/info channel timing (reset() has no info channel at all in this
         gym_util worker implementation)."""
+        if not self._active:
+            return {'joint_idx': self.joint_idx, 'fault_type': None, 'severity': None, 'q_lock': None}
         return {
             'joint_idx': self.joint_idx,
             'fault_type': self.fault_type,
@@ -136,6 +153,11 @@ class FaultInjector(gym.Wrapper):
             _sim = self._sim()
             _sim.model.jnt_range[self._qpos_addr(_sim)[2]] = self._orig_jnt_range
         obs = self.env.reset(**kwargs)
+        if self.onset is not None:
+            if self._t > 0:
+                self.onset_log.append(None if self._close_t is None else self._close_t + self._onset_delay)
+            self._t, self._close_t, self._active, self._q_onset = 0, None, False, None
+            return self._inject_fault_info(obs)
         if self.fault_type is not None:
             sim = self._sim()
             qposadr, dofadr, jid = self._qpos_addr(sim)
@@ -154,6 +176,17 @@ class FaultInjector(gym.Wrapper):
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
+        if self.onset is not None and not self._active:
+            self._t += 1
+            if self._close_t is None and float(np.asarray(action)[-1]) > 0:
+                self._close_t = self._t
+            if self._close_t is not None and self._t >= self._close_t + self._onset_delay:
+                sim = self._sim()
+                self._q_onset = sim.data.qpos[self._qpos_addr(sim)[0]]
+                self._active = True
+            return self._inject_fault_info(obs), reward, done, info
+        if self.onset is not None:
+            self._t += 1
         if self.fault_type is not None:
             sim = self._sim()
             qposadr, dofadr, jid = self._qpos_addr(sim)
@@ -166,3 +199,9 @@ class FaultInjector(gym.Wrapper):
                 sim.data.qvel[dofadr] = np.clip(sim.data.qvel[dofadr], -qmax, qmax)
                 sim.forward()
         return self._inject_fault_info(obs), reward, done, info
+
+    def get_onset_log(self):
+        """Onset step of every finished episode, plus the running one (RPC getter)."""
+        cur = [] if self.onset is None or self._t == 0 else \
+            [None if self._close_t is None else self._close_t + self._onset_delay]
+        return list(self.onset_log) + cur

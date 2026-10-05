@@ -1,5 +1,5 @@
 """
-Revision experiments (reviewer requests). Same seeds (10000-10019), runner config and
+Additional experiments. Same seeds (10000-10019), runner config and
 policy construction as the main locked sweep, so every result pairs episode by episode
 with the existing B1 / W-IK / Priority IK files.
 
@@ -19,6 +19,13 @@ method
                      and without motion limit, Priority IK at execution
   nofault100         B1 without any fault, 100 seeds (10000-10099)
   wik_wXXX_rYYY_dmK  W-IK as above with LM damping 10^-K (default 1e-6), e.g. wik_w030_r000_dm4
+  wik_wXXXX_...      four digits: w_r = XXXX/1000, e.g. wik_w0001_r000_dm4 (w_r 0.001); optional
+                     suffix _itN sets the iteration limit (default 30), e.g. wik_w005_r000_dm4_it300
+  prio_l2_XXX        Priority IK with the secondary damping lambda_2 = XXX/100 (main runs: 0.20)
+  midg_<m>           mid-episode onset: the joint locks 10 control steps after the first gripper-close
+                     command, at the angle it has then; <m> in b1, pos, pose, prio (same settings as the
+                     main runs). The policy re-reads the fault state before every call, so it acts like
+                     B1 until the onset.
 
 Locked faults on the joints that are not near zero for every method: J1, J3, J5, J6, J7.
 Output: results/libero_fault_sweep_locked_<method>/<task>_robot0_joint<j>_locked_na.json
@@ -39,14 +46,37 @@ RES = "/workspace/results"
 def make_policy(method, base, runner, joint_name, fault_type="locked", severity=None):
     kw = dict(base_seed=42, env_ref=runner.env, fault_joint_name=joint_name,
               fault_type=fault_type, fault_severity=severity)
-    m = re.fullmatch(r"wik_w(\d{3})_r(\d{3})(?:_dm(\d))?", method)
+    m = re.fullmatch(r"wik_w(\d{3,4})_r(\d{3})(?:_dm(\d))?(?:_it(\d+))?", method)
     if m:
         from native_joint_policy import NativeJointPolicy
-        ov = {"rot_weight": int(m.group(1)) / 100.0, "reg": int(m.group(2)) / 100.0}
+        ov = {"rot_weight": int(m.group(1)) / (100.0 if len(m.group(1)) == 3 else 1000.0),
+              "reg": int(m.group(2)) / 100.0}
         if m.group(3):
             ov["damping"] = 10.0 ** -int(m.group(3))
+        if m.group(4):
+            ov["n_iter"] = int(m.group(4))
         from ik_redistribution import summarize_ik_log
         return NativeJointPolicy(base, mode="ik", ik_overrides=ov, **kw), summarize_ik_log
+    m = re.fullmatch(r"prio_l2_(\d{3})", method)
+    if m:
+        import native_joint_policy_prio as npp
+        return npp.PrioIKPolicy(base, lam2=int(m.group(1)) / 100.0, **kw), npp.summarize_prio_log
+    m = re.fullmatch(r"midg_(b1|pos|pose|prio)", method)
+    if m:
+        b = m.group(1)
+        if b == "b1":
+            from native_joint_policy import NativeJointPolicy
+            pol, summ = NativeJointPolicy(base, base_seed=42, fault_spec=None), None
+        elif b == "prio":
+            import native_joint_policy_prio as npp
+            pol, summ = npp.PrioIKPolicy(base, lam2=0.2, **kw), npp.summarize_prio_log
+        else:
+            from native_joint_policy import NativeJointPolicy
+            from ik_redistribution import summarize_ik_log
+            ov = {} if b == "pos" else {"rot_weight": 1.0}
+            pol, summ = NativeJointPolicy(base, mode="ik", ik_overrides=ov, **kw), summarize_ik_log
+        pol.refresh_fault_spec = True
+        return pol, summ
     if method == "prio_rev_l001":
         import native_joint_policy_prio as npp
         from ik_priority_rev import ik_priority_rev
@@ -77,7 +107,7 @@ def load_base(task):
     return p, cfg
 
 
-def runner_for(task, cfg, joint_name, fault_type, tag, severity=None, n_test=N_TEST):
+def runner_for(task, cfg, joint_name, fault_type, tag, severity=None, n_test=N_TEST, onset=None):
     return FaultRobomimicImageRunner(
         output_dir=f"{RES}/_rev_run_{tag}_{task}",
         dataset_path=TASKS[task]["dataset"], shape_meta=cfg.task.shape_meta,
@@ -85,7 +115,7 @@ def runner_for(task, cfg, joint_name, fault_type, tag, severity=None, n_test=N_T
         n_train=0, n_test=n_test, test_start_seed=TEST_START_SEED, n_envs=5,
         max_steps=400, n_obs_steps=cfg.n_obs_steps, n_action_steps=cfg.n_action_steps,
         render_obs_key="agentview_image", abs_action=True,
-        actuation_mode="joint", joint_kp=TASKS[task].get("joint_kp", 150))
+        actuation_mode="joint", joint_kp=TASKS[task].get("joint_kp", 150), fault_onset=onset)
 
 
 def per_episode(log):
@@ -125,16 +155,24 @@ def main():
             out = f"{out_dir}/{task}_{jn}_range_reduced_{level}.json"
         if os.path.exists(out):
             print(f"SKIP (exists): {out}", flush=True); continue
-        runner = runner_for(task, cfg, jn, ft, f"{method}_{level}", severity=sev)
+        onset = "grasp+10" if method.startswith("midg_") else None
+        runner = runner_for(task, cfg, jn, ft, f"{method}_{level}", severity=sev, onset=onset)
         policy, summarize = make_policy(method, base, runner, jn, ft, sev)
         log = runner.run(policy)
+        onsets = None
+        if onset is not None:
+            try:
+                onsets = runner.env.call("get_onset_log")      # per worker: one entry per episode
+            except Exception as e:
+                onsets = {"error": str(e)}
         try:
             stats = summarize(policy) if summarize else None
         except Exception as e:
             stats = {"summary_error": str(e)}
         json.dump({method: log.get("test/mean_score"), "per_episode": per_episode(log), "task": task,
                    "joint": jn, "fault_type": ft, "severity": sev, "level": None if level == "locked" else level,
-                   "n_test": N_TEST, "stats": stats}, open(out, "w"), indent=2)
+                   "n_test": N_TEST, "stats": stats, "onset": onset, "onset_steps_per_worker": onsets},
+                  open(out, "w"), indent=2)
         print(f"RESULT {task}/{jn}/{level}/{method}: {log.get('test/mean_score')}", flush=True)
         runner.env.close()
     print(f"DONE {task} {method}", flush=True)

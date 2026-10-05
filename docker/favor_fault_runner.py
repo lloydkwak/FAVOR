@@ -55,7 +55,7 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             render_obs_key='agentview_image', fps=10, crf=22,
             past_action=False, abs_action=True, tqdm_interval_sec=5.0,
             n_envs=None, actuation_mode='osc', joint_output_max=0.2, joint_damping_ratio=1.0, joint_kp=150,
-            record_cfg=None):
+            record_cfg=None, fault_onset=None):
         # record_cfg: optional dict for render_recorder.RenderRecorder (qualitative figures and
         # videos). None (every sweep) leaves the env chain and init_fn exactly as before.
         # actuation_mode='osc'  -> unchanged existing behavior (OSC_POSE, EE-pose actions)
@@ -179,7 +179,7 @@ class FaultRobomimicImageRunner(RobomimicImageRunner):
             inner = robomimic_env
             if actuation_mode == 'joint':
                 inner = JointActuationWrapper(inner, output_max=joint_output_max)
-            faulted = FaultInjector(inner, fault_joint_name, fault_type, fault_severity)
+            faulted = FaultInjector(inner, fault_joint_name, fault_type, fault_severity, onset=fault_onset)
             if record_cfg is not None and enable_render:
                 from render_recorder import RenderRecorder
                 faulted = RenderRecorder(faulted, fault_joint_name=fault_joint_name, **record_cfg)
