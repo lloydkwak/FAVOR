@@ -9,8 +9,9 @@ DC="docker compose -f docker/docker-compose.libero.yml run --rm libero bash -c"
 TASKS="alphabet_soup milk bowl_ramekin bowl_stove"
 # round 1 (done): nofault wik_w100_r000 wik_w005_r000 wik_w030_r010 wik_w020_r010 wik_w050_r010 wik_w010_r010
 #                 wik_w030_r000 prio_rev_l001 rg_prioint latency qual package analysis
-# round 2: healthy n=100, W-IK rho=0 with Priority IK's damping, RG budget/weighting split, RG on moderate range faults,
-#          failure-case video from a camera that keeps the arm in view
+# round 2 (done): healthy n=100, W-IK rho=0 with Priority IK's damping, RG budget/weighting split, RG on moderate range
+#          faults, failure-case video from a camera that keeps the arm in view. rg_prioint_b03 was stopped before
+#          Bowl-Stove (15/20 conditions) once the budget effect was resolved; the analysis reports it as partial.
 DEFAULT="nofault100 wik_w030_r000_dm4 rg_prioint_b03 rg_wint_nob rg_prioint:moderate qual_d package analysis"
 STEPS=${*:-$DEFAULT}
 filt() { stdbuf -oL tr '\r' '\n' | grep --line-buffered -aE "$1" | grep --line-buffered -v BrokenPipe; }

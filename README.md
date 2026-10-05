@@ -26,8 +26,8 @@ Left: Bowl-Stove, joint 7 locked. Right: Soup, joint 3 locked. Full video: <a hr
 
 - **No retraining.** Works on an unchanged pretrained joint-space Diffusion Policy. It needs only the fault description (which joint, and its admissible range).
 - **Priority IK is best overall.** With a joint locked, success rises from 0.11 (no intervention) to **0.48**. The best fixed weighted-IK setting reaches 0.32, and denoising-time methods reach 0.19 (E-C-I) and 0.31 (RG-DDPM). Every comparison is paired over 4 tasks × 7 joints × 20 seeds.
-- **No single weight works.** Over nine weighted-IK settings (orientation weight 0.05–1.0, with and without posture regularization), the best mean on locked J1/J3/J5/J6/J7 is 0.52, against 0.67 for Priority IK. Settings that solve proximal faults fail distal ones, and the reverse. Priority IK uses one setting for every joint.
-- **How decides whether where helps.** Guidance inside the sampler with a *weighted* internal correction lowers success in front of Priority IK (0.67 → 0.52 on the same 20 conditions); the same guidance with a *prioritized* internal correction raises it to 0.73 (33 : 57 episodes, p = 0.015), at 3.3× the inference time. The prioritized internal correction also has no motion budget; `rg_prioint_b03` and `rg_wint_nob` separate the two. Reversing the priority to orientation first lowers success whatever the damping (0.55 and 0.52).
+- **No single weight works.** Over ten weighted-IK settings (orientation weight 0.05–1.0, with and without posture regularization, two damping values), the best mean on locked J1/J3/J5/J6/J7 is 0.54, against 0.67 for Priority IK. Settings that solve proximal faults fail distal ones, and the reverse. Priority IK uses one setting for every joint.
+- **Order matters at execution; freedom matters inside guidance.** Reversing the priority to orientation first lowers success whatever the damping (0.55 and 0.52 vs 0.67). Denoising-time guidance in front of Priority IK helps only if its internal correction may move the healthy joints freely: with a 0.3 rad motion budget or a posture term it lowers distal (J6/J7) success to 0.20 and 0.14; without either it matches Priority IK alone (0.68, 39 : 41) or slightly exceeds it with a prioritized internal correction (0.73, 33 : 57, p = 0.015, mostly on J7), for +2.3 s per call against +0.13 s. On moderate range faults it adds nothing (0.83 vs 0.82, p = 0.73).
 - **Limitation.** The fault description must be accurate. A 0.01 rad error in the assumed lock angle already drops success from 0.67 to 0.39.
 
 ## Problem and methods
@@ -38,7 +38,7 @@ Left: Bowl-Stove, joint 7 locked. Right: Soup, joint 3 locked. Full video: <a hr
 - Four LIBERO tasks (two from LIBERO-Object, two from LIBERO-Spatial), Franka Panda, 50 demonstrations per task.
 - Joint-position control at 20 Hz.
 - Diffusion Policy in joint space: DDPM with 100 steps, horizon 16, 8 steps executed per replanning.
-- Healthy (no-fault) success on the evaluation seeds: Soup 0.85, Milk 0.80, Bowl-Ramekin 0.70, Bowl-Stove 0.85.
+- Healthy (no-fault) success, n = 100 per task: Soup 0.81, Milk 0.88, Bowl-Ramekin 0.67, Bowl-Stove 0.91 (mean 0.82). On the 20 evaluation seeds: 0.85, 0.80, 0.70, 0.85 (mean 0.80).
 
 **Faults** (one joint at a time, onset at the episode's initial joint angle):
 
@@ -141,7 +141,7 @@ Selecting among samples does not address the fault, and denoising-time guidance 
 | W-IK pose | weighted IK | 0.07 | 0.05 | 0.32 | 120 : 31 (p = 1.5e-13) |
 
 - **Reversed order:** reversing the priority costs most where position and orientation conflict (J6, J7).
-- **Added guidance:** guidance inside the sampler hurts even with Priority IK at execution. RG-DDPM's internal correction is itself a weighted pose IK, so it bakes the J6/J7 trade-off into the trajectory before the post-hoc step can undo it.
+- **Added guidance:** RG-DDPM's guidance hurts even with Priority IK at execution. Its internal correction is a weighted pose IK anchored to the policy's posture, so it bakes the J6/J7 trade-off into the trajectory before the post-hoc step can undo it. Without that anchor the guidance no longer hurts (next section).
 
 ### Weighted IK over its parameters (locked, 4 tasks × J1, J3, J5, J6, J7)
 
@@ -157,16 +157,38 @@ Selecting among samples does not address the fault, and denoising-time guidance 
 | **Priority IK** | **0.84** | **0.46** | **0.67** | – |
 
 Removing the posture term (ρ = 0) solves the proximal faults at any weight but collapses the distal ones. With ρ = 0
-the Levenberg–Marquardt update is also almost undamped (ρ² is the damping; Priority IK uses λ₁² = 1e-4), so the run
-`wik_w030_r000_dm4` (ρ = 0, damping 1e-4) separates the posture term from the numerical damping. All nine settings
-(`paper/tables/tab_wik_sweep.csv`) are below Priority IK with p < 1e-7.
+the Levenberg–Marquardt update is also almost undamped (ρ² is the damping; Priority IK uses λ₁² = 1e-4). Adding Priority
+IK's damping back (`wik_w030_r000_dm4`, ρ = 0, damping 1e-4) leaves the picture unchanged: proximal 0.86, distal 0.18,
+mean 0.54 (73 : 20). Without a posture term in either method, the remaining difference is weighting against strict
+priority. All ten settings (`paper/tables/tab_wik_sweep.csv`) are below Priority IK with p < 1e-7.
 
 | Variant (same 20 conditions) | proximal | distal | mean | Prio : variant |
 |---|---|---|---|---|
 | Priority IK | 0.84 | 0.46 | 0.67 | – |
 | Orientation first, position damped 0.2 / 0.01 | 0.87 / 0.84 | 0.21 / 0.13 | 0.55 / 0.52 | 74 : 26 / 81 : 20 |
-| RG-DDPM (weighted internal) + Priority IK | 0.78 | 0.14 | 0.52 | 86 : 25 |
-| RG-DDPM (prioritized internal) + Priority IK | 0.81 | 0.58 | **0.73** | 33 : 57 (p = 0.015) |
+| RG-DDPM (weighted internal + posture term) + Priority IK | 0.78 | 0.14 | 0.52 | 86 : 25 |
+| RG-DDPM (prioritized internal, budget 0.3 rad)‡ + Priority IK | 0.83 | 0.20 | 0.59 | 54 : 31 |
+| RG-DDPM (weighted internal, no posture, no budget) + Priority IK | 0.82 | 0.45 | 0.68 | 39 : 41 (p = 0.91) |
+| RG-DDPM (prioritized internal, no budget) + Priority IK | 0.81 | 0.58 | **0.73** | 33 : 57 (p = 0.015) |
+
+‡ 15 conditions (Bowl-Stove not run; stopped once the factor below was resolved).
+
+Changing one factor of the guidance's internal correction at a time, on the 15 conditions every variant has
+(Soup, Milk, Bowl-Ramekin; `paper/tables/tab_rg_factors.csv`):
+
+| Factor | Episodes (first : second variant succeeds alone) | p |
+|---|---|---|
+| no motion budget vs 0.3 rad (both prioritized) | 62 : 24 | 5.1e-5 |
+| no posture term vs posture term (both weighted)§ | 65 : 25 | 3.0e-5 |
+| prioritized vs weighted (neither constrained) | 37 : 29 | 0.39 |
+
+§ The two also differ in iteration count (10 vs 5) and damping (1e-4 vs 1e-6).
+
+Guidance helps only when its internal correction may move the healthy joints freely, and then it lands close to
+Priority IK alone. Whether that internal correction is prioritized is secondary (its one visible effect is locked J7,
+0.53 vs 0.26 over all four tasks). At execution, by contrast, the order decides the outcome. On moderate range faults
+(`paper/tables/tab_rg_moderate.csv`) Priority IK alone reaches 0.82, the healthy level (0.80 on the same seeds), and
+prioritized guidance adds nothing (0.83, 15 : 18, p = 0.73).
 
 Inference time per policy call (5 parallel environments, RTX 3080; `paper/tables/tab_latency.csv`): B1 976 ms,
 W-IK +21 to +66 ms, Priority IK +130 ms, RG-DDPM +2.3 s.
