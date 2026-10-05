@@ -9,9 +9,10 @@ orientation only in the remaining null space.
 A joint-space Diffusion Policy is trained on a healthy Franka Panda. At test time one joint is
 locked, or its range of motion shrinks. Without retraining, this study compares every place in the
 inference loop where a correction can be inserted: during denoising, by selecting among samples,
-and after sampling. The answer turned out to depend less on *where* the correction acts than on
-*how* it splits the unavoidable error: restoring the end-effector **position first** and fixing
-orientation only in the remaining null space (**Priority IK**) is the most reliable choice.
+and after sampling. Across the mechanisms tested, success depended less on *where* the correction acts
+than on *how* the kinematic correction is structured and constrained, i.e. how it splits the unavoidable
+error: restoring the end-effector **position first** and fixing orientation only in the remaining null
+space (**Priority IK**) is the most reliable choice on these pick-and-place tasks.
 
 <p align="center">
   <img src="paper/video/A_distal_preview.gif" width="49%" alt="Bowl-Stove, joint 7 locked">
@@ -96,17 +97,19 @@ All numbers are success rates over the same 20 test seeds (10000–10019) for ev
 
 Condition-level statistics (bootstrap CIs over conditions, sign and Wilcoxon tests with Holm correction, and a
 mixed-effects logistic model with condition and episode effects) are in `paper/tables/tab_stats_condition.csv` and
-`tab_glmm.csv`. They agree in direction with the paired counts but are more conservative. With Holm correction over
-all rows, the condition-level tests stay significant against B1 (moderate to locked), RG-DDPM and W-IK pose (locked
-and overall) and E-C-I (overall). Against W-IK pos they do not (overall Wilcoxon p = 0.064), although the bootstrap
-95% CI of the mean difference excludes zero (+0.03 to +0.12) and the mixed model agrees from moderate faults on.
-Against Best W-IK there is no overall difference, and at the mild level Priority IK is worse.
+`tab_glmm.csv`. They agree in direction with the paired counts but are more conservative. The primary family is
+Priority IK against each method over all fault levels, Holm-corrected within that family; per-level rows are
+exploratory. In the primary family the condition-level tests are significant against B1, E-C-I, RG-DDPM and W-IK
+pose (Holm p ≤ 0.007 for both the sign and the Wilcoxon test). Against W-IK pos the effect is moderate: mean
+difference +0.08 (bootstrap 95% CI +0.03 to +0.12), Wilcoxon Holm p = 0.008, sign test Holm p = 0.15; the mixed
+model agrees from moderate faults on. Against Best W-IK there is no overall difference (+0.003, CI −0.03 to +0.03),
+and at the mild level Priority IK is worse.
 
 † Best W-IK picks the better of W-IK pos and W-IK pose for each condition after seeing the results. It is a reference, not an upper bound. Over all 112 conditions the paired counts (Priority IK only : other only) are 373:199 against W-IK pos (p = 3e-13), 408:137 against W-IK pose (p = 3e-32) and 231:225 against Best W-IK (p = 0.81). Condition-level tests that do not treat episodes of different conditions as independent are in `paper/tables/tab_stats_condition.csv`.
 
 <p align="center"><img src="paper/figs/fig_methods_by_level.png" width="95%" alt="Success rate per fault level"></p>
 
-Selecting among samples does not address the fault, and denoising-time guidance (RG-DDPM) performs on par with post-hoc weighted IK. Priority IK has the highest mean from moderate faults on. Exceptions: J4 range faults at every level and J2 at the mild level, where position-only weighted IK is better (see Limitations).
+Selecting among samples does not address the fault, and denoising-time guidance (RG-DDPM, with its weighted internal correction, posture term and motion limit) performs on par with post-hoc weighted IK; how much it helps depends on that internal correction (see the guidance variants below). Priority IK has the highest mean from moderate faults on. Exceptions: J4 range faults at every level and J2 at the mild level, where position-only weighted IK is better (see Limitations).
 
 ### Which joint fails matters, and weighted IK has to guess
 
@@ -130,7 +133,7 @@ Selecting among samples does not address the fault, and denoising-time guidance 
 - **How the episodes were chosen:** each shown baseline behaves as it does on most seeds of that condition.
 - **Reproducibility:** every shown episode reproduces its sweep result exactly. Episodes are re-rendered from the original seeds, and `results/qual/compose_report.md` checks each one against the sweep JSON.
 
-### Ablation: how the error is split, not where (locked, 28 conditions)
+### Ablation: how the error is split (locked, 28 conditions)
 
 | Variant | Change | J6 | J7 | Mean | Prio : variant |
 |---|---|---|---|---|---|

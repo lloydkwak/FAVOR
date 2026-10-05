@@ -20,7 +20,7 @@ Contents
   the end-effector path is overlaid, and a badge marks success or failure.
 {scen}
 All shown episodes are re-rendered from the evaluation sweep and reproduce its recorded
-outcomes. Code: https://github.com/lloydkwak/FAVOR
+outcomes. Code: {code}
 """
 
 SUMMARY = """The video shows a pretrained joint-space diffusion policy on a Franka Panda with one joint locked,
@@ -57,6 +57,8 @@ def main():
     ap.add_argument("--video", default="paper/video")
     ap.add_argument("--out", default="paper/multimedia")
     ap.add_argument("--scenarios", default="results/qual/scenarios.json")
+    ap.add_argument("--code-url", default="provided with the manuscript (anonymized for review)",
+                    help="code link written into ReadMe.txt; keep the default for double-anonymous submission")
     ap.add_argument("--zip-video", choices=["full", "small"], default="full",
                     help="video inside the zip: the original (RA-L zip limit 50 MB) or the <= 10 MB re-encode")
     a = ap.parse_args()
@@ -72,7 +74,7 @@ def main():
         for sc in json.load(open(a.scenarios)):
             scen += f"  - {lab.get(sc['task'], sc['task'])}, joint {sc['joint']} locked, seed {sc['seeds'][0]}" + \
                     (f" ({sc['note']})" if sc.get("note") else "") + "\n"
-    open(os.path.join(a.out, "ReadMe.txt"), "w").write(README.format(w=w, h=h, dur=dur, scen=scen))
+    open(os.path.join(a.out, "ReadMe.txt"), "w").write(README.format(w=w, h=h, dur=dur, scen=scen, code=a.code_url))
     open(os.path.join(a.out, "Summary.txt"), "w").write(SUMMARY)
     small = os.path.join(a.out, "favor_supp_10MB.mp4")
     reencode(src, small, 9.5)
