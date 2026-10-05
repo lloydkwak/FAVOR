@@ -1,0 +1,4 @@
+Factor,Comparison,Episodes A:B,McNemar $p$
+Motion budget,no budget vs 0.3 rad (both prioritized),62:24,$5.1\times10^{-5}$
+Prioritized vs weighted,both without budget or posture term,37:29,0.39
+Posture term,without vs with posture term$^\ddagger$,65:25,$3.0\times10^{-5}$

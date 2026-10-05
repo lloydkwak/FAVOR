@@ -2,7 +2,7 @@
 
 ## Left panel: override error ~ 0 (< 0.1 mm), B1 success
 
-Near-zero kinematic error means the demonstrations barely move the faulty joint, so the fault costs nothing kinematically; the remaining spread should then be the policy's own success rate (compare with the healthy rate).
+Every point with zero override error is J7. J7 rotates about the flange axis and everything after it lies on that axis, so locking J7 leaves the end-effector POSITION unchanged and only turns the gripper about its axis (yaw). The position-only diagnosis therefore reports 0 mm by construction, while the orientation error is what makes B1 fail at the locked and severe levels. A complete predictor needs an orientation term (e.g. the error of a fingertip point offset from the flange), or J7 has to be marked and discussed separately (Fig. 3 marks it).
 
 | B1 | level | task | joint | override mm | healthy |
 |---|---|---|---|---|---|
@@ -29,4 +29,4 @@ Near-zero kinematic error means the demonstrations barely move the faulty joint,
 |---|---|---|---|---|---|
 | 0.05 | locked | Soup | J7 | 1.51 | 0.85 |
 
-The residual is computed on demonstration waypoints with W-IK; a small residual there does not guarantee that the policy's own (shifted) trajectories stay reachable, and Priority IK's residual differs from W-IK's.
+Same cause: the residual is a position residual, and for J7 the remaining error is the gripper yaw. It is also computed on demonstration waypoints with W-IK, not on the policy's own trajectories with Priority IK.

@@ -1,6 +1,6 @@
 \begin{table}[t]
 \centering
-\caption{Order, damping and prioritized-guidance variants on locked J1, J3, J5, J6, J7 (4 tasks).}
+\caption{Order, damping and denoising-time guidance variants on locked J1, J3, J5, J6, J7 (4 tasks; J2/J4 excluded as in Table~\ref{tab:wik_sweep}). Unless stated otherwise, RG variants execute with Priority IK; budget = maximum motion of each healthy joint in the internal correction. $^\dagger$Incomplete variant: computed on the conditions it has (count given); see Table~\ref{tab:rg_factors} for comparisons on a common condition set.}
 \label{tab:ablation_ext}
 \setlength{\tabcolsep}{3pt}
 \begin{tabular}{lccccccc}
@@ -8,11 +8,13 @@
 Variant & J1 & J3 & J5 & J6 & J7 & Mean (20) & Prio:variant \\
 \midrule
 Priority IK & 0.80 & 0.88 & 0.76 & 0.53 & 0.39 & 0.67 & -- \\
-Orientation-first ($\lambda$ on position 0.2) & 0.86 & 0.88 & 0.60 & 0.28 & 0.14 & 0.55 & 74:26 ($1.7\times10^{-6}$) \\
-Orientation-first ($\lambda$ on position 0.01) & 0.83 & 0.86 & 0.65 & 0.16 & 0.09 & 0.52 & 81:20 ($6.9\times10^{-10}$) \\
-RG-DDPM (weighted internal) + Priority IK & 0.65 & 0.90 & 0.76 & 0.23 & 0.05 & 0.52 & 86:25 ($5.0\times10^{-9}$) \\
-RG-DDPM (prioritized internal) + Priority IK & 0.81 & 0.81 & 0.88 & 0.63 & 0.53 & 0.73 & 33:57 (0.015) \\
-RG-DDPM (weighted internal) + W-IK pose & 0.44 & 0.81 & 0.75 & 0.11 & 0.05 & 0.43 & 124:29 ($3.4\times10^{-15}$) \\
+Orientation first ($\lambda$ on position 0.2) & 0.86 & 0.88 & 0.60 & 0.28 & 0.14 & 0.55 & 74:26 ($1.7\times10^{-6}$) \\
+Orientation first ($\lambda$ on position 0.01) & 0.83 & 0.86 & 0.65 & 0.16 & 0.09 & 0.52 & 81:20 ($6.9\times10^{-10}$) \\
+RG: weighted + posture internal, W-IK pose exec. & 0.44 & 0.81 & 0.75 & 0.11 & 0.05 & 0.43 & 124:29 ($3.4\times10^{-15}$) \\
+RG: weighted + posture internal & 0.65 & 0.90 & 0.76 & 0.23 & 0.05 & 0.52 & 86:25 ($5.0\times10^{-9}$) \\
+RG: weighted internal, no posture term, no budget & 0.80 & 0.84 & 0.84 & 0.64 & 0.26 & 0.68 & 39:41 (0.91) \\
+RG: prioritized internal, budget 0.3 rad$^\dagger$ (15/20) & 0.83 & 0.82 & 0.90 & 0.30 & 0.10 & 0.59 & 54:31 (0.017) \\
+RG: prioritized internal, no budget & 0.81 & 0.81 & 0.88 & 0.63 & 0.53 & 0.73 & 33:57 (0.015) \\
 \bottomrule
 \end{tabular}
 \end{table}

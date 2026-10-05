@@ -1,30 +1,30 @@
 \begin{table}[t]
 \centering
-\caption{Mixed-effects logistic regression (variational Bayes): success ~ method, random intercepts for condition and for the shared episode (seed).}
+\caption{Mixed-effects logistic regression (variational Bayes): success $\sim$ method, with random intercepts for condition and for the shared episode (seed) and a random slope of the method effect over conditions.}
 \label{tab:glmm}
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{lcccc}
+\begin{tabular}{lcccccc}
 \toprule
-Level & vs & log-odds (Prio) & posterior sd & odds ratio \\
+Level & vs & log-odds (Prio) & posterior sd & 95\% interval & odds ratio & sd of slope over cond. \\
 \midrule
-mild & b1 & +0.34 & 0.12 & 1.4 \\
-mild & eci & +0.02 & 0.11 & 1.0 \\
-mild & pos & -0.56 & 0.14 & 0.6 \\
-mild & pose & +0.01 & 0.13 & 1.0 \\
-moderate & b1 & +1.51 & 0.12 & 4.5 \\
-moderate & eci & +1.26 & 0.11 & 3.5 \\
-moderate & rg & +0.53 & 0.13 & 1.7 \\
-moderate & pos & +0.45 & 0.12 & 1.6 \\
-moderate & pose & +1.21 & 0.13 & 3.3 \\
-severe & b1 & +2.10 & 0.12 & 8.1 \\
-severe & eci & +1.82 & 0.12 & 6.2 \\
-severe & pos & +0.92 & 0.12 & 2.5 \\
-severe & pose & +1.50 & 0.13 & 4.5 \\
-locked & b1 & +3.06 & 0.12 & 21.2 \\
-locked & eci & +2.17 & 0.12 & 8.8 \\
-locked & rg & +1.41 & 0.13 & 4.1 \\
-locked & pos & +1.23 & 0.11 & 3.4 \\
-locked & pose & +1.37 & 0.13 & 4.0 \\
+mild & b1 & +0.35 & 0.13 & [+0.09, +0.60] & 1.4 & 0.87 \\
+mild & eci & -0.02 & 0.11 & [-0.25, +0.20] & 1.0 & 0.79 \\
+mild & pos & -0.55 & 0.14 & [-0.82, -0.28] & 0.6 & 0.32 \\
+mild & pose & +0.03 & 0.14 & [-0.23, +0.30] & 1.0 & 0.75 \\
+moderate & b1 & +1.48 & 0.13 & [+1.23, +1.74] & 4.4 & 1.83 \\
+moderate & eci & +1.18 & 0.12 & [+0.94, +1.42] & 3.3 & 2.20 \\
+moderate & rg & +0.52 & 0.13 & [+0.26, +0.79] & 1.7 & 1.02 \\
+moderate & pos & +0.46 & 0.13 & [+0.21, +0.71] & 1.6 & 0.61 \\
+moderate & pose & +1.20 & 0.14 & [+0.92, +1.47] & 3.3 & 1.51 \\
+severe & b1 & +1.86 & 0.13 & [+1.61, +2.12] & 6.5 & 2.35 \\
+severe & eci & +1.49 & 0.12 & [+1.25, +1.74] & 4.5 & 2.40 \\
+severe & pos & +0.78 & 0.13 & [+0.52, +1.04] & 2.2 & 1.74 \\
+severe & pose & +1.35 & 0.14 & [+1.08, +1.62] & 3.9 & 1.91 \\
+locked & b1 & +2.62 & 0.12 & [+2.38, +2.87] & 13.8 & 2.14 \\
+locked & eci & +1.76 & 0.13 & [+1.52, +2.01] & 5.8 & 2.64 \\
+locked & rg & +1.29 & 0.13 & [+1.04, +1.54] & 3.6 & 1.16 \\
+locked & pos & +0.89 & 0.12 & [+0.65, +1.13] & 2.4 & 1.84 \\
+locked & pose & +1.26 & 0.13 & [+1.01, +1.51] & 3.5 & 1.04 \\
 \bottomrule
 \end{tabular}
 \end{table}

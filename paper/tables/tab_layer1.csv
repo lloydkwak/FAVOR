@@ -1,3 +1,5 @@
 Predictor,Outcome,n,Spearman $\rho$
 override EE error,B1 success,112,-0.75
 residual EE error after IK,Priority IK success,112,-0.66
+"override EE error, without J7",B1 success,96,-0.86
+"residual EE error after IK, without J7",Priority IK success,96,-0.72
