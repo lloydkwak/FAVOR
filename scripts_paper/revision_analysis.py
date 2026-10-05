@@ -188,16 +188,28 @@ def wik_sweep(R, data, OUT, rep):
     M.savefig(fig, OUT, "fig_wik_sweep"); rep.append("fig_wik_sweep")
 
 
-def _variant_rows(R, data, level, V):
+def _variant_recs(R, data, level, m, d):
     kind = "locked" if level == "locked" else "range"
+    return {(t, j): (M.load(os.path.join(R, f"libero_fault_sweep_{kind}_{d}", M.fname(level, t, j))) if d
+                     else data.get((level, t, j, m))) for t in M.TASKS for j in JR}
+
+
+def _variant_rows(R, data, level, V, partial=False):
+    """partial=True keeps a variant with at least half of the 20 conditions; its row is computed on the
+    conditions it has (marked with a dagger and the count), so its mean is not comparable to the others."""
     P = {(t, j): data.get((level, t, j, "prio")) for t in M.TASKS for j in JR}
     rows = []
     for m, lab, d in V:
-        recs = {(t, j): (M.load(os.path.join(R, f"libero_fault_sweep_{kind}_{d}", M.fname(level, t, j))) if d
-                         else data.get((level, t, j, m))) for t in M.TASKS for j in JR}
-        if any(score(r) is None for r in recs.values()):
-            print(f"  {level} {m}: incomplete -> skipped"); continue
-        row = [lab] + [M.r2(np.mean([recs[(t, j)]["score"] for t in M.TASKS])) for j in JR]
+        recs = _variant_recs(R, data, level, m, d)
+        have = {k: r for k, r in recs.items() if score(r) is not None}
+        if len(have) < len(recs):
+            if not (partial and len(have) >= len(recs) // 2):
+                print(f"  {level} {m}: incomplete ({len(have)}/{len(recs)}) -> skipped"); continue
+            print(f"  {level} {m}: partial ({len(have)}/{len(recs)}) -> kept, marked")
+            lab = f"{lab}$^\\dagger$ ({len(have)}/{len(recs)})"
+            recs = have
+        row = [lab] + [M.r2(np.mean(v)) if (v := [recs[(t, j)]["score"] for t in M.TASKS if (t, j) in recs]) else "--"
+                       for j in JR]
         row.append(M.r2(np.mean([r["score"] for r in recs.values()])))
         if m == "prio":
             row.append("--")
@@ -216,14 +228,16 @@ def ablation_ext(R, data, OUT, rep):
          ("rg_wint_nob", "RG: weighted internal, no posture term, no budget", "rg_wint_nob"),
          ("rg_prioint_b03", "RG: prioritized internal, budget 0.3 rad", "rg_prioint_b03"),
          ("rg_prioint", "RG: prioritized internal, no budget", "rg_prioint")]
-    rows = _variant_rows(R, data, "locked", V)
+    rows = _variant_rows(R, data, "locked", V, partial=True)
     if len(rows) >= 2:
         M.write_table(OUT, "tab_ablation_ext", ["Variant", "J1", "J3", "J5", "J6", "J7", "Mean (20)", "Prio:variant"],
                       rows, "Order, damping and denoising-time guidance variants on locked J1, J3, J5, J6, J7 "
                       "(4 tasks; J2/J4 excluded as in Table~\\ref{tab:wik_sweep}). Unless stated otherwise, RG variants "
                       "execute with Priority IK; budget = maximum motion of each healthy joint in the internal "
-                      "correction.", "tab:ablation_ext")
+                      "correction. $^\\dagger$Incomplete variant: computed on the conditions it has (count given); see "
+                      "Table~\\ref{tab:rg_factors} for comparisons on a common condition set.", "tab:ablation_ext")
         rep.append("tab_ablation_ext")
+    rg_factors(R, data, OUT, rep)
     Vm = [("prio", "Priority IK", None), ("b1", "B1", None), ("pos", "W-IK pos", None), ("pose", "W-IK pose", None),
           ("rg", "RG: weighted internal, W-IK pose exec.", None),
           ("rg_prioint", "RG: prioritized internal, Priority IK exec.", "rg_prioint")]
@@ -233,6 +247,45 @@ def ablation_ext(R, data, OUT, rep):
                       rows, "Prioritized denoising-time guidance on moderate range faults (4 tasks $\\times$ J1, J3, "
                       "J5, J6, J7).", "tab:rg_moderate")
         rep.append("tab_rg_moderate")
+
+
+def rg_factors(R, data, OUT, rep):
+    """Which part of the RG internal correction matters, each factor isolated on the conditions that
+    every compared variant has: motion budget, prioritized vs weighted, posture term."""
+    V = {"prio": ("Priority IK", None), "rg_prio": ("RG: weighted + posture", "rg_prio"),
+         "rg_wint_nob": ("RG: weighted, no posture, no budget", "rg_wint_nob"),
+         "rg_prioint_b03": ("RG: prioritized, budget 0.3 rad", "rg_prioint_b03"),
+         "rg_prioint": ("RG: prioritized, no budget", "rg_prioint")}
+    recs = {m: _variant_recs(R, data, "locked", m, d) for m, (_, d) in V.items()}
+    C = [k for k in recs["prio"] if all(score(recs[m][k]) is not None for m in V)]
+    if len(C) < 5:
+        print(f"  rg_factors: only {len(C)} common conditions -> skipped"); return
+    tasks = sorted({t for t, _ in C}, key=M.TASKS.index)
+    rows = []
+    for m, (lab, _) in V.items():
+        s = {k: recs[m][k]["score"] for k in C}
+        pj = [M.r2(np.mean(v)) if (v := [s[k] for k in C if k[1] == j]) else "--" for j in JR]
+        rows.append([lab] + pj + [M.r2(np.mean(list(s.values()))),
+                                  M.r2(np.mean([v for k, v in s.items() if k[1] in (1, 3)])),
+                                  M.r2(np.mean([v for k, v in s.items() if k[1] in (5, 6, 7)]))])
+    M.write_table(OUT, "tab_rg_factors_means", ["Variant", "J1", "J3", "J5", "J6", "J7", "Mean", "Prox.", "Dist."],
+                  rows, f"RG internal-correction variants on the {len(C)} locked conditions all of them have "
+                  f"({', '.join(M.TASK_LABEL.get(t, t) for t in tasks)}; J1, J3, J5, J6, J7). "
+                  "All execute with Priority IK.", "tab:rg_factors_means")
+    comps = [("Motion budget", "rg_prioint", "rg_prioint_b03", "no budget vs 0.3 rad (both prioritized)"),
+             ("Prioritized vs weighted", "rg_prioint", "rg_wint_nob", "both without budget or posture term"),
+             ("Posture term", "rg_wint_nob", "rg_prio", "without vs with posture term$^\\ddagger$")]
+    rows = []
+    for name, a, b, note in comps:
+        B = Cc = 0
+        for k in C:
+            x, y = M.paired(recs[a][k]["pe"], recs[b][k]["pe"]); B += x; Cc += y
+        rows.append([name, note, f"{B}:{Cc}", M.fmt_p(M.mcnemar(B, Cc))])
+    M.write_table(OUT, "tab_rg_factors", ["Factor", "Comparison", "Episodes A:B", "McNemar $p$"], rows,
+                  f"One factor of the RG internal correction changed at a time, pooled over the {len(C)} common "
+                  "conditions (A = first variant succeeds alone, B = second). $^\\ddagger$The two variants also differ "
+                  "in iteration count (10 vs 5) and damping ($10^{-4}$ vs $10^{-6}$).", "tab:rg_factors", "llcc")
+    rep += ["tab_rg_factors_means", "tab_rg_factors"]
 
 
 def condition_stats(data, OUT, rep, glmm):
