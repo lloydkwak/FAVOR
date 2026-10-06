@@ -161,18 +161,22 @@ def wik_sweep(R, data, OUT, rep):
         b, c = pooled(P, recs)
         dif = [P[k]["score"] - recs[k]["score"] for k in recs]
         damp = "$10^{-6}$" if dm is None else f"$10^{{-{dm}}}$"
-        rows.append([f"{w:g}", f"{rho:.2f}", damp, str(it or 30)] + [M.r2(perj[j]) for j in JR] + [M.r2(allm),
+        lam_eff = f"{lam_equiv(w, rho, dm):.2g}" if rho == 0 else "--"
+        rows.append([f"{w:g}", f"{rho:.2f}", damp, str(it or 30), lam_eff] + [M.r2(perj[j]) for j in JR] + [M.r2(allm),
                      f"{b}:{c} ({M.fmt_p(M.mcnemar(b, c))})", f"{sum(x > 0 for x in dif)}/{sum(x < 0 for x in dif)}"])
         if dm is None and it is None:
             curves[(w, rho)] = dict(prox=np.mean([perj[1], perj[3]]), dist=np.mean([perj[6], perj[7]]), all=allm)
     pj = {j: np.mean([P[(t, j)]["score"] for t in M.TASKS]) for j in JR}
-    rows.append(["\\multicolumn{4}{l}{Priority IK ($\\lambda_1^2{=}10^{-4}$, 30 it.)}"] + [M.r2(pj[j]) for j in JR] +
+    rows.append(["\\multicolumn{4}{l}{Priority IK ($\\lambda_1^2{=}10^{-4}$, 30 it.)}", "0.2"] + [M.r2(pj[j]) for j in JR] +
                 [M.r2(np.mean([p["score"] for p in P.values()])), "--", "--"])
-    M.write_table(OUT, "tab_wik_sweep", ["$w_r$", "$\\rho$", "damping", "iter.", "J1", "J3", "J5", "J6", "J7", "Mean (20)",
+    M.write_table(OUT, "tab_wik_sweep", ["$w_r$", "$\\rho$", "damping", "iter.", "$\\lambda_{\\mathrm{eff}}$", "J1", "J3", "J5", "J6", "J7", "Mean (20)",
                                          "Prio:W-IK", "cond. +/-"], rows,
                   "Weighted IK over the orientation weight $w_r$, posture weight $\\rho$ and Levenberg--Marquardt "
                   "damping on locked faults, 4 tasks $\\times$ J1, J3, J5, J6, J7. J2 and J4 are excluded because every "
-                  "method is near zero on them (Table III), so they cannot separate the settings. Paired = episodes only "
+                  "method is near zero on them (Table III), so they cannot separate the settings. "
+                  "$\\lambda_{\\mathrm{eff}} = \\sqrt{\\mu}/w_r$ for $\\rho = 0$: as $w_r \\to 0$ the damped weighted "
+                  "solution approaches two-level priority IK with $\\lambda_1 = \\sqrt{\\mu}$ and $\\lambda_2 = "
+                  "\\lambda_{\\mathrm{eff}}$. Paired = episodes only "
                   "Priority IK solved : only W-IK solved; cond. +/- = conditions where Priority IK was better / worse.",
                   "tab:wik_sweep")
     rep.append("tab_wik_sweep")
@@ -752,6 +756,52 @@ def mild_report(R, data, layer1, OUT, rep):
     rep.append("analysis/mild_level.md")
 
 
+
+def lam_equiv(w, rho, dm):
+    """Weighted LM  min |e_p - J_p dq|^2 + w^2 |e_r - J_r dq|^2 + mu |dq|^2  (rho = 0): for small w the
+    position block dominates (damping mu = lambda_1^2) and, inside its null space, the orientation block
+    is a damped least squares with damping mu / w^2 = lambda_2^2. Equivalent lambda_2 = sqrt(mu) / w."""
+    mu = 1e-6 if dm is None else 10.0 ** -dm
+    return np.sqrt(mu) / w
+
+
+def fig_orient_damping(R, data, OUT, rep):
+    """Success over the effective orientation damping: Priority IK's lambda_2 sweep and every W-IK
+    setting without posture term (rho = 0) on one axis."""
+    P = {(t, j): data.get(("locked", t, j, "prio")) for t in M.TASKS for j in JR}
+    if any(v is None for v in P.values()):
+        return
+    pts_p = [(0.2, np.mean([v["score"] for v in P.values()]), 30)]
+    for d in glob.glob(os.path.join(R, SWEEP_DIR.format("prio_l2_*"))):
+        m = re.search(r"prio_l2_(\d{3})$", d)
+        recs = [M.load(os.path.join(d, M.fname("locked", t, j))) for t in M.TASKS for j in JR] if m else []
+        if m and all(score(r) is not None for r in recs):
+            pts_p.append((int(m.group(1)) / 100, np.mean([r["score"] for r in recs]), 30))
+    pts_w = []
+    for (w, rho, dm, it), d in _wik_dirs(R).items():
+        if rho != 0:
+            continue
+        recs = [M.load(os.path.join(R, d, M.fname("locked", t, j))) for t in M.TASKS for j in JR]
+        if all(score(r) is not None for r in recs):
+            pts_w.append((lam_equiv(w, rho, dm), np.mean([r["score"] for r in recs]), it or 30, w))
+    if len(pts_p) < 2:
+        return
+    fig, ax = plt.subplots(figsize=(3.4, 2.1))
+    pts_p.sort()
+    ax.plot([p[0] for p in pts_p], [p[1] for p in pts_p], "-o", color=M.COLOR["prio"], ms=4, lw=1.3,
+            label="Priority IK ($\\lambda_2$)")
+    for it, mk, lab in [(30, "s", "W-IK, $\\rho$=0, 30 it."), (300, "D", "W-IK, $\\rho$=0, 300 it.")]:
+        q = [p for p in pts_w if p[2] == it]
+        if q:
+            ax.scatter([p[0] for p in q], [p[1] for p in q], marker=mk, s=22, facecolor="none",
+                       edgecolor=M.COLOR["pos"], lw=1.1, label=lab, zorder=3)
+    ax.set_xscale("log"); ax.set_ylim(0.3, 0.85)
+    ax.set_xlabel("orientation damping $\\lambda_2$ or $\\sqrt{\\mu}/w_r$"); ax.set_ylabel("Success (locked, 20 cond.)")
+    ax.yaxis.grid(True, color="#E6E6E6", lw=0.6); ax.set_axisbelow(True)
+    ax.legend(fontsize=6.5, frameon=False, loc="lower right")
+    fig.tight_layout()
+    M.savefig(fig, OUT, "fig_orient_damping"); rep.append("fig_orient_damping")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default="results")
@@ -770,6 +820,7 @@ def main():
     j4_report(a.results, data, a.layer1, a.out, rep)
     fig3_outliers(a.results, data, a.layer1, a.out, rep)
     prio_lam2(a.results, data, a.out, rep)
+    fig_orient_damping(a.results, data, a.out, rep)
     mid_onset(a.results, a.out, rep)
     residuals(a.results, data, a.out, rep)
     if a.glmm:
