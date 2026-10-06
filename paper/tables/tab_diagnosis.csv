@@ -1,0 +1,5 @@
+Outcome,predictor,conds,Spearman,AUC,acc. at 10 mm,success$\geq$0.5
+B1,position error,112,-0.75,0.87,0.80,49/112
+B1,fingertip error (10 cm),112,-0.87,0.95,0.77,49/112
+Priority IK,position error,112,-0.66,0.94,0.92,81/112
+Priority IK,fingertip error (10 cm),112,-0.76,0.99,0.81,81/112

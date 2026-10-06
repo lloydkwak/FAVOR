@@ -1,0 +1,16 @@
+\begin{table}[t]
+\centering
+\caption{Mid-episode onset: the joint runs healthy and locks 10 control steps (0.5~s) after the policy's first gripper-close command, at the angle it has at that moment; the correcting methods re-read the fault before every policy call, so the first chunk after the onset can be executed uncorrected. Locked J1, J3, J5, J6, J7, 4 tasks, same seeds. Paired = episodes only Priority IK solved : only the method solved. The onset occurred in 400 of 400 episodes (median step 96, range 54--149); in the others the gripper never closed and no fault occurred.}
+\label{tab:mid_onset}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lccccccc}
+\toprule
+Method & J1 & J3 & J5 & J6 & J7 & Mean & Prio:method \\
+\midrule
+B1 & 0.11 & 0.15 & 0.46 & 0.05 & 0.24 & 0.20 & 203:10 ($6.8\times10^{-48}$) \\
+W-IK pos & 0.34 & 0.20 & 0.74 & 0.46 & 0.21 & 0.39 & 144:26 ($5.3\times10^{-21}$) \\
+W-IK pose & 0.56 & 0.80 & 0.59 & 0.20 & 0.15 & 0.46 & 111:21 ($5.6\times10^{-16}$) \\
+Priority IK & 0.78 & 0.80 & 0.68 & 0.44 & 0.74 & 0.69 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
