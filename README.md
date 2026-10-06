@@ -26,9 +26,9 @@ Left: Bowl-Stove, joint 7 locked. Right: Soup, joint 3 locked. Full video: <a hr
 ## Highlights
 
 - **No retraining.** Works on an unchanged pretrained joint-space Diffusion Policy. It needs only the fault description (which joint, and its admissible range).
-- **Priority IK is best overall.** With a joint locked, success rises from 0.11 (no intervention) to **0.48**. The two weighted-IK baselines (W-IK pos / pose, with posture term) reach 0.30 and 0.32, and denoising-time methods reach 0.19 (E-C-I) and 0.31 (RG-DDPM). Every comparison is paired over 4 tasks × 7 joints × 20 seeds.
-- **What decides it: free healthy joints, position first, damped orientation.** Weighted IK without a posture term is the same family as Priority IK: as the orientation weight $w_r \to 0$ it becomes two-level priority IK with $\lambda_1 = \sqrt{\mu}$, $\lambda_2 = \sqrt{\mu}/w_r$ (the main Priority IK setting is $w_r$ 0.05 with damping $\mu$ = 1e-4; their residuals coincide). Over 13 weighted settings and five $\lambda_2$ values on locked J1/J3/J5/J6/J7, success follows this effective orientation damping: about 0.51–0.55 at ≤ 0.05, 0.67 at 0.2 (main), 0.75 at 0.5, 0.67–0.72 at 1, 0.59 at 10. The usual weighted-IK baselines, which keep the policy's posture (ρ = 0.1), reach at most 0.51. More iterations do not close the gap (30 and 300 give the same residuals).
-- **Faults that appear mid-task.** When the joint locks 0.5 s after the policy's first grasp command, at the angle it has then, Priority IK keeps 0.69 (0.67 with the lock from the start), against 0.46 for W-IK pose, 0.39 for W-IK pos and 0.20 without intervention.
+- **Priority IK is the best of the methods in the main comparison.** With a joint locked, success rises from 0.11 (no intervention) to **0.48**. The two weighted-IK baselines (W-IK pos / pose, with posture term) reach 0.30 and 0.32, and denoising-time methods reach 0.19 (E-C-I) and 0.31 (RG-DDPM). Every comparison is paired over 4 tasks × 7 joints × 20 seeds.
+- **What decides it: free healthy joints, position first, damped orientation.** Weighted IK without a posture term corresponds to Priority IK to leading order: for a small orientation weight $w_r$, one damped weighted step approximates a two-level priority step with $\lambda_1 = \sqrt{\mu}$, $\lambda_2 = \sqrt{\mu}/w_r$ (a first-order, single-step argument). The main Priority IK setting corresponds to $w_r$ 0.05 with damping $\mu$ = 1e-4, and on demonstration waypoints the two leave the same residuals to the reported precision. Over 13 weighted settings and five $\lambda_2$ values on locked J1/J3/J5/J6/J7, success follows this effective orientation damping: about 0.51–0.55 at ≤ 0.05, 0.67 at 0.2 (main), 0.75 at 0.5, 0.67–0.72 at 1, 0.59 at 10. The usual weighted-IK baselines, which keep the policy's posture (ρ = 0.1), reach at most 0.51. More iterations do not close the gap (30 and 300 give the same residuals).
+- **Faults that appear mid-task** (one onset protocol tested). When the joint locks 0.5 s after the policy's first grasp command, at the angle it has then, Priority IK keeps 0.69 (0.67 with the lock from the start), against 0.46 for W-IK pose, 0.39 for W-IK pos and 0.20 without intervention.
 - **Order matters at execution; freedom matters inside guidance.** Reversing the priority to orientation first lowers success whatever the damping (0.55 and 0.52 vs 0.67). Denoising-time guidance in front of Priority IK helps only if its internal correction may move the healthy joints freely: with a 0.3 rad motion budget or a posture term it lowers distal (J6/J7) success to 0.20 and 0.14; without either it matches Priority IK alone (0.68, 39 : 41) or slightly exceeds it with a prioritized internal correction (0.73, 33 : 57, p = 0.015, mostly on J7), for +2.3 s per call against +0.13 s. On moderate range faults it adds nothing (0.83 vs 0.82, p = 0.73).
 - **Limitation.** The fault description must be accurate. A 0.01 rad error in the assumed lock angle already drops success from 0.67 to 0.39.
 
@@ -76,13 +76,18 @@ $$
 - $\lambda_1 = 0.01$, $\lambda_2 = 0.2$.
 - Steps are clipped to joint limits; up to 30 iterations.
 
-The orientation term can only use motions that leave the position unchanged, so position error is never traded for orientation error.
+The orientation term acts in the null space of the damped position task. Because $\lambda_1 > 0$, $N_1$ is not an exact
+null-space projector ($J_p N_1 = \lambda_1^2 (J_p J_p^\top + \lambda_1^2 I)^{-1} J_p$), so the orientation step can still move
+the position slightly; with $\lambda_1 = 0.01$ this effect is small, and it vanishes as $\lambda_1 \to 0$.
 
 **Relation to weighted IK.** Weighted damped least squares without a posture term,
 $\min \lVert e_p - J_p \Delta q\rVert^2 + w_r^2 \lVert e_r - J_r \Delta q\rVert^2 + \mu \lVert \Delta q\rVert^2$,
-approaches this update as $w_r \to 0$, with $\lambda_1 = \sqrt{\mu}$ and $\lambda_2 = \sqrt{\mu}/w_r$. The main setting
-($\lambda_1$ 0.01, $\lambda_2$ 0.2) equals $w_r$ 0.05 with $\mu$ = 1e-4, and the two give identical residuals
-(`paper/analysis/ik_convergence.md`). What separates Priority IK from the W-IK baselines is therefore the posture term
+matches this update to leading order in $w_r$, with $\lambda_1 = \sqrt{\mu}$ and $\lambda_2 = \sqrt{\mu}/w_r$. The argument
+covers a single linearized step; it does not cover the step and joint-limit clamps of the iterative solvers, so the
+correspondence is approximate and is checked numerically. The main setting ($\lambda_1$ 0.01, $\lambda_2$ 0.2)
+corresponds to $w_r$ 0.05 with $\mu$ = 1e-4; on demonstration waypoints the two leave the same residuals to the reported
+precision (`paper/analysis/ik_convergence.md`), and in the rollouts the matched pair at $\lambda_{\mathrm{eff}} = 1$ is
+statistically indistinguishable (0.69 vs 0.67, 47 : 55, p = 0.49). What separates Priority IK from the W-IK baselines is therefore the posture term
 and the effective orientation damping, not the solver structure; the priority form is used because its two parameters
 have a direct meaning.
 
@@ -247,7 +252,7 @@ the onset is executed uncorrected. The onset occurred in all 400 episodes (step 
 Priority IK keeps the level of the lock-from-the-start runs (0.67) and is the best method on Soup, Milk and
 Bowl-Stove (`paper/tables/tab_mid_onset.csv`).
 
-### Fresh-seed replication (n = 50, seeds 10020–10069)
+### Fresh-seed replication (seven locked conditions, n = 50, seeds 10020–10069)
 
 | Condition | B1 | W-IK pos | W-IK pose | **Priority IK** |
 |---|---|---|---|---|
@@ -272,17 +277,17 @@ The pattern holds on unseen seeds: Priority IK is best on 5 of 7 conditions. The
 - **Locked faults:** the assumed lock angle must be accurate. Errors of 0.01, 0.02 and 0.05 rad drop success from 0.67 to 0.39, 0.19 and 0.03, and proximal joints degrade fastest.
 - **Practical consequence:** the lock angle should come from the joint encoder, not from a nominal value.
 
-### Why it works: a kinematic predictor
+### A policy-free kinematic diagnostic
 
 <p align="center"><img src="paper/figs/fig_layer1.png" width="85%" alt="Kinematic analysis"></p>
 
-Success is predicted by a purely kinematic quantity, computed without running the policy:
+Success is strongly associated with a purely kinematic quantity, computed without running the policy:
 - Without intervention: the end-effector error the fault would cause (Spearman ρ = −0.75 with B1 success, 112 conditions).
 - With Priority IK: the error left after retargeting (ρ = −0.66).
 - As a classifier for success ≥ 0.5: AUC 0.87 (B1) and 0.94 (Priority IK). Adding the orientation error with a 10 cm lever arm (a fingertip-point error) also covers the J7 faults, which are pure yaw, and raises these to 0.95 and 0.99 (Spearman −0.87 and −0.76; `paper/tables/tab_diagnosis.csv`).
 - Success collapses beyond roughly 10 mm of residual error. This boundary also explains the lock-angle sensitivity: proximal joints sit about 0.5 m from the end effector, so 0.02 rad is already about 10 mm.
 
-The policy itself is not the bottleneck; recovering the intended end-effector motion is.
+These are associations measured on the same 112 conditions, not an out-of-sample validation on new tasks or robots. Within them, recovering the intended end-effector motion, not the policy itself, is the bottleneck.
 
 ## Limitations
 
