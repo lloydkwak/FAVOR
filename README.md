@@ -26,8 +26,9 @@ Left: Bowl-Stove, joint 7 locked. Right: Soup, joint 3 locked. Full video: <a hr
 ## Highlights
 
 - **No retraining.** Works on an unchanged pretrained joint-space Diffusion Policy. It needs only the fault description (which joint, and its admissible range).
-- **Priority IK is best overall.** With a joint locked, success rises from 0.11 (no intervention) to **0.48**. The best fixed weighted-IK setting reaches 0.32, and denoising-time methods reach 0.19 (E-C-I) and 0.31 (RG-DDPM). Every comparison is paired over 4 tasks × 7 joints × 20 seeds.
-- **No single weight works.** Over ten weighted-IK settings (orientation weight 0.05–1.0, with and without posture regularization, two damping values), the best mean on locked J1/J3/J5/J6/J7 is 0.54, against 0.67 for Priority IK. Settings that solve proximal faults fail distal ones, and the reverse. Priority IK uses one setting for every joint.
+- **Priority IK is best overall.** With a joint locked, success rises from 0.11 (no intervention) to **0.48**. The two weighted-IK baselines (W-IK pos / pose, with posture term) reach 0.30 and 0.32, and denoising-time methods reach 0.19 (E-C-I) and 0.31 (RG-DDPM). Every comparison is paired over 4 tasks × 7 joints × 20 seeds.
+- **What decides it: free healthy joints, position first, damped orientation.** Weighted IK without a posture term is the same family as Priority IK: as the orientation weight $w_r \to 0$ it becomes two-level priority IK with $\lambda_1 = \sqrt{\mu}$, $\lambda_2 = \sqrt{\mu}/w_r$ (the main Priority IK setting is $w_r$ 0.05 with damping $\mu$ = 1e-4; their residuals coincide). Over 13 weighted settings and five $\lambda_2$ values on locked J1/J3/J5/J6/J7, success follows this effective orientation damping: about 0.51–0.55 at ≤ 0.05, 0.67 at 0.2 (main), 0.75 at 0.5, 0.67–0.72 at 1, 0.59 at 10. The usual weighted-IK baselines, which keep the policy's posture (ρ = 0.1), reach at most 0.51. More iterations do not close the gap (30 and 300 give the same residuals).
+- **Faults that appear mid-task.** When the joint locks 0.5 s after the policy's first grasp command, at the angle it has then, Priority IK keeps 0.69 (0.67 with the lock from the start), against 0.46 for W-IK pose, 0.39 for W-IK pos and 0.20 without intervention.
 - **Order matters at execution; freedom matters inside guidance.** Reversing the priority to orientation first lowers success whatever the damping (0.55 and 0.52 vs 0.67). Denoising-time guidance in front of Priority IK helps only if its internal correction may move the healthy joints freely: with a 0.3 rad motion budget or a posture term it lowers distal (J6/J7) success to 0.20 and 0.14; without either it matches Priority IK alone (0.68, 39 : 41) or slightly exceeds it with a prioritized internal correction (0.73, 33 : 57, p = 0.015, mostly on J7), for +2.3 s per call against +0.13 s. On moderate range faults it adds nothing (0.83 vs 0.82, p = 0.73).
 - **Limitation.** The fault description must be accurate. A 0.01 rad error in the assumed lock angle already drops success from 0.67 to 0.39.
 
@@ -75,7 +76,15 @@ $$
 - $\lambda_1 = 0.01$, $\lambda_2 = 0.2$.
 - Steps are clipped to joint limits; up to 30 iterations.
 
-The orientation term can only use motions that leave the position unchanged. Unlike weighted IK, it can never trade position error for orientation error.
+The orientation term can only use motions that leave the position unchanged, so position error is never traded for orientation error.
+
+**Relation to weighted IK.** Weighted damped least squares without a posture term,
+$\min \lVert e_p - J_p \Delta q\rVert^2 + w_r^2 \lVert e_r - J_r \Delta q\rVert^2 + \mu \lVert \Delta q\rVert^2$,
+approaches this update as $w_r \to 0$, with $\lambda_1 = \sqrt{\mu}$ and $\lambda_2 = \sqrt{\mu}/w_r$. The main setting
+($\lambda_1$ 0.01, $\lambda_2$ 0.2) equals $w_r$ 0.05 with $\mu$ = 1e-4, and the two give identical residuals
+(`paper/analysis/ik_convergence.md`). What separates Priority IK from the W-IK baselines is therefore the posture term
+and the effective orientation damping, not the solver structure; the priority form is used because its two parameters
+have a direct meaning.
 
 Task-priority IK itself is classical (Nakamura et al., 1987; Siciliano & Slotine, 1991). What this
 repository contributes is the systematic comparison showing that this correction, with position first,
@@ -103,7 +112,11 @@ exploratory. In the primary family the condition-level tests are significant aga
 pose (Holm p ≤ 0.007 for both the sign and the Wilcoxon test). Against W-IK pos the effect is moderate: mean
 difference +0.08 (bootstrap 95% CI +0.03 to +0.12), Wilcoxon Holm p = 0.008, sign test Holm p = 0.15; the mixed
 model agrees from moderate faults on. Against Best W-IK there is no overall difference (+0.003, CI −0.03 to +0.03),
-and at the mild level Priority IK is worse.
+and at the mild level Priority IK is worse. A logistic GEE with episodes clustered by condition and robust standard
+errors (`tab_gee.csv`) agrees: over all levels Priority IK against W-IK pos +0.32 log-odds (95% CI +0.13 to +0.50) and
+against W-IK pose +0.49 (+0.30 to +0.67); at the mild level it is below W-IK pos (−0.26, −0.49 to −0.04). Its robust
+SEs (0.09–0.42) are larger than the mixed model's variational posterior SDs (about 0.13), so the mixed model is only a
+secondary check.
 
 † Best W-IK picks the better of W-IK pos and W-IK pose for each condition after seeing the results. It is a reference, not an upper bound. Over all 112 conditions the paired counts (Priority IK only : other only) are 373:199 against W-IK pos (p = 3e-13), 408:137 against W-IK pose (p = 3e-32) and 231:225 against Best W-IK (p = 0.81). Condition-level tests that do not treat episodes of different conditions as independent are in `paper/tables/tab_stats_condition.csv`.
 
@@ -157,13 +170,37 @@ Selecting among samples does not address the fault, and denoising-time guidance 
 | w_r 0.3, ρ 0.1 | 0.60 | 0.24 | 0.51 | 102 : 38 |
 | w_r 1.0, ρ 0.1 (W-IK pose) | 0.69 | 0.06 | 0.45 | 120 : 31 |
 | w_r 0.3, ρ 0 | 0.86 | 0.09 | 0.52 | 78 : 17 |
-| **Priority IK** | **0.84** | **0.46** | **0.67** | – |
+| w_r 0.3, ρ 0, μ 1e-4 (λ_eff 0.033) | 0.86 | 0.18 | 0.54 | 73 : 20 |
+| w_r 0.01, ρ 0, μ 1e-4 (λ_eff 1) | 0.83 | 0.47 | 0.69 | 47 : 55 (p = 0.49) |
+| w_r 0.01, ρ 0, μ 1e-4, 300 iterations | 0.86 | 0.53 | 0.72 | 30 : 50 (p = 0.033) |
+| w_r 0.001, ρ 0, μ 1e-4, 300 iterations (λ_eff 10) | 0.56 | 0.50 | 0.59 | 91 : 57 |
+| **Priority IK** (λ_2 0.2) | **0.84** | **0.46** | **0.67** | – |
 
-Removing the posture term (ρ = 0) solves the proximal faults at any weight but collapses the distal ones. With ρ = 0
-the Levenberg–Marquardt update is also almost undamped (ρ² is the damping; Priority IK uses λ₁² = 1e-4). Adding Priority
-IK's damping back (`wik_w030_r000_dm4`, ρ = 0, damping 1e-4) leaves the picture unchanged: proximal 0.86, distal 0.18,
-mean 0.54 (73 : 20). Without a posture term in either method, the remaining difference is weighting against strict
-priority. All ten settings (`paper/tables/tab_wik_sweep.csv`) are below Priority IK with p < 1e-7.
+Removing the posture term (ρ = 0) solves the proximal faults at any weight. Whether the distal faults are solved then
+depends on the effective orientation damping $\lambda_{\mathrm{eff}} = \sqrt{\mu}/w_r$ (μ = LM damping; 1e-6 unless
+stated): with $\lambda_{\mathrm{eff}} \le 0.05$ the correction chases the full orientation and moves the healthy joints by
+about 1 rad per correction, leaving 28–42 mm distal residual on the policy's own trajectories (`tab_residuals.csv`);
+with $\lambda_{\mathrm{eff}}$ near 1 the weighted solver matches or exceeds Priority IK. Every setting with a posture term
+or with $\lambda_{\mathrm{eff}} \le 0.05$ is below Priority IK with p < 1e-7.
+
+<p align="center"><img src="paper/figs/fig_orient_damping.png" width="55%" alt="Success over the effective orientation damping"></p>
+
+Priority IK over its own orientation damping (`tab_prio_lam2.csv`):
+
+| λ_2 | J6 | J7 | mean (20) | λ_2 0.2 : variant |
+|---|---|---|---|---|
+| 0.05 | 0.31 | 0.14 | 0.55 | 72 : 25 (p = 1.9e-6) |
+| 0.1 | 0.46 | 0.25 | 0.62 | 50 : 28 (p = 0.017) |
+| **0.2 (main)** | 0.53 | 0.39 | 0.67 | – |
+| 0.5 | 0.55 | 0.64 | **0.75** | 34 : 66 (p = 0.002) |
+| 1.0 | 0.60 | 0.33 | 0.67 | 55 : 56 (p = 1.00) |
+
+The main runs use λ_2 = 0.2, fixed before these runs. Success is at least 0.67 from 0.2 to 1.0 and drops below 0.1.
+λ_2 = 0.5 is best on these seeds; it was chosen after seeing them and has not been checked on fresh seeds.
+
+Convergence (`paper/analysis/ik_convergence.md`, policy-free, demonstration waypoints): 300 iterations change the
+residuals of every setting by less than 0.2 mm, except for large $\lambda_{\mathrm{eff}}$, where the orientation converges
+slowly (λ_eff 1: distal orientation 8.3° after 30 iterations, 3.5° after 300; rollout 0.69 → 0.72).
 
 | Variant (same 20 conditions) | proximal | distal | mean | Prio : variant |
 |---|---|---|---|---|
@@ -195,6 +232,20 @@ prioritized guidance adds nothing (0.83, 15 : 18, p = 0.73).
 
 Inference time per policy call (5 parallel environments, RTX 3080; `paper/tables/tab_latency.csv`): B1 976 ms,
 W-IK +21 to +66 ms, Priority IK +130 ms, RG-DDPM +2.3 s.
+
+### Fault onset during the task (locked J1, J3, J5, J6, J7, 4 tasks)
+
+The joint runs healthy and locks 10 control steps (0.5 s) after the policy's first gripper-close command, at the
+angle it has at that moment. The correcting methods read the fault before every policy call, so up to one chunk after
+the onset is executed uncorrected. The onset occurred in all 400 episodes (step 54–149, median 96).
+
+| | B1 | W-IK pos | W-IK pose | **Priority IK** |
+|---|---|---|---|---|
+| mean (20 conditions) | 0.20 | 0.39 | 0.46 | **0.69** |
+| Priority IK only : method only | 203 : 10 | 144 : 26 | 111 : 21 | – |
+
+Priority IK keeps the level of the lock-from-the-start runs (0.67) and is the best method on Soup, Milk and
+Bowl-Stove (`paper/tables/tab_mid_onset.csv`).
 
 ### Fresh-seed replication (n = 50, seeds 10020–10069)
 
@@ -228,6 +279,7 @@ The pattern holds on unseen seeds: Priority IK is best on 5 of 7 conditions. The
 Success is predicted by a purely kinematic quantity, computed without running the policy:
 - Without intervention: the end-effector error the fault would cause (Spearman ρ = −0.75 with B1 success, 112 conditions).
 - With Priority IK: the error left after retargeting (ρ = −0.66).
+- As a classifier for success ≥ 0.5: AUC 0.87 (B1) and 0.94 (Priority IK). Adding the orientation error with a 10 cm lever arm (a fingertip-point error) also covers the J7 faults, which are pure yaw, and raises these to 0.95 and 0.99 (Spearman −0.87 and −0.76; `paper/tables/tab_diagnosis.csv`).
 - Success collapses beyond roughly 10 mm of residual error. This boundary also explains the lock-angle sensitivity: proximal joints sit about 0.5 m from the end effector, so 0.02 rad is already about 10 mm.
 
 The policy itself is not the bottleneck; recovering the intended end-effector motion is.
@@ -237,7 +289,7 @@ The policy itself is not the bottleneck; recovering the intended end-effector mo
 - **Simulation only.** All results are from LIBERO (robosuite/MuJoCo).
 - **Fault description assumed known.** As in prior fault-adaptation work, the faulted joint and its admissible range are given. Detecting and identifying the fault is out of scope.
 - **Lock angle must be precise.** Locked-joint performance depends on an accurate lock angle (see Robustness).
-- **J4 range faults.** Priority IK is below position-only weighted IK on J4 at every range level (mild 0.60 vs 0.84, moderate 0.40 vs 0.51, severe 0.11 vs 0.28), and on J2 at the mild level. `paper/analysis/j4_range.md` relates this to the kinematic residual and to how far each method moves the healthy joints.
+- **J4 range faults and mild faults.** Priority IK is below position-only weighted IK on J4 at every range level (mild 0.60 vs 0.84, moderate 0.40 vs 0.51, severe 0.11 vs 0.28), and at the mild level also on J2 (1 : 10) and J7 (1 : 6). On these joints it moves the healthy joints 3–80× more than W-IK pos (largest change 0.22–0.59 vs 0.007–0.08 rad; `paper/analysis/mild_level.md`, `j4_range.md`): without a posture term it removes small errors with large posture changes. The posture term that hurts on locked distal faults helps here.
 - **Unrecoverable faults.** Faults that remove a needed degree of freedom cannot be compensated by any training-free correction (locked J2/J4, Milk J6).
 
 ## Repository layout
