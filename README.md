@@ -330,7 +330,7 @@ run_*.sh                      training, sweeps, ablations, replication, qualitat
 ## Setup
 
 ```bash
-git clone https://github.com/lloydkwak/FAVOR.git && cd FAVOR
+# Download the repository and cd FAVOR
 bash third_party/setup_third_party.sh        # LIBERO @8f1084e, diffusion_policy @20537a5 + favor.patch
 docker compose -f docker/docker-compose.libero.yml build
 ```
