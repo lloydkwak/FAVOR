@@ -359,10 +359,10 @@ The matching demo file is `<suite>/<task>_demo.hdf5`. A fifth task, `drawer`, wa
 ./run_x_queue.sh rg locked range:0            # RG-DDPM
 ./run_x_queue.sh prio_rev locked              # ablation: orientation-first priority
 ./run_x_queue.sh rg_prio locked               # ablation: RG-DDPM sampling + Priority IK execution
-./run_x_queue.sh prio_b015 range:2            # appendix: Priority IK + motion budget
+./run_x_queue.sh prio_b015 range:2            # additional run
 ./run_ms_queue.sh none rs050:range:0 rs150:range:0 lop001:locked lop002:locked lop005:locked lop010:locked lom010:locked   # wrong fault description
 ./run_n50_queue.sh                            # fresh-seed n=50 replication
-docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/docker/run_libero_confirm_n50.py   # appendix: n=50 for B1 / Select / Random-N / E-C-I
+docker compose -f docker/docker-compose.libero.yml run --rm libero python /workspace/docker/run_libero_confirm_n50.py   # additional run
 docker compose -f docker/docker-compose.libero.yml run --rm -v $PWD/analysis_out:/workspace/analysis_out libero \
     python /workspace/scripts_libero/ik_select_and_layer1v2.py   # kinematic analysis -> analysis_out/layer1_v2.csv
 
