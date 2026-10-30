@@ -1,0 +1,51 @@
+[
+ {
+  "table_texture": 4,
+  "bead_diameter_mm": 5.634555547626196,
+  "bead_friction": 0.5590665231400338,
+  "kp_scale": 1.1488711868942283,
+  "latency_ms": 21.49825590801365
+ },
+ {
+  "table_texture": 1,
+  "bead_diameter_mm": 5.533972193250999,
+  "bead_friction": 0.6242015445447959,
+  "kp_scale": 0.9896744301267977,
+  "latency_ms": 12.68341140811261
+ },
+ {
+  "table_texture": 5,
+  "bead_diameter_mm": 5.58147335346067,
+  "bead_friction": 0.6801857897304489,
+  "kp_scale": 1.1719312036983751,
+  "latency_ms": 5.683229881043158
+ },
+ {
+  "table_texture": 0,
+  "bead_diameter_mm": 6.431664485400905,
+  "bead_friction": 0.5311803737479845,
+  "kp_scale": 1.0299894009322934,
+  "latency_ms": 25.94011854602892
+ },
+ {
+  "table_texture": 1,
+  "bead_diameter_mm": 5.91820741257895,
+  "bead_friction": 0.6275426819733483,
+  "kp_scale": 1.0956879936664818,
+  "latency_ms": 10.72744808983714
+ },
+ {
+  "table_texture": 5,
+  "bead_diameter_mm": 5.70572295501999,
+  "bead_friction": 0.7895646126612591,
+  "kp_scale": 0.8820406217683834,
+  "latency_ms": 28.892778222938354
+ },
+ {
+  "table_texture": 3,
+  "bead_diameter_mm": 5.642403697573403,
+  "bead_friction": 0.5988357642636568,
+  "kp_scale": 1.1998107649268603,
+  "latency_ms": 22.318473110069633
+ }
+]
