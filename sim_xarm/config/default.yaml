@@ -29,20 +29,25 @@ robot:
   max_joint_speed_deg: 180.0         # official maximum; reduce for safety studies
   # Fixed start pose (cup upright, gripper pointing forward). Solved once by
   # scripts/solve_home.py for task.home_cup_pos and frozen here (rad).
-  home_q: [0.0, -0.2453, 0.0, 0.7883, 0.0, 1.0336, 0.0]
+  home_q: [0.2517, -0.1347, -0.1080, 1.1221, -0.0152, 1.2560, -0.8979]
   gripper:
     type: xarm_gripper               # xarm_gripper | robotiq_2f85   TODO(real): confirm gripper
     closed_ctrl: 200.0               # xarm_gripper actuator command that holds the cup handle (0..255)
 
 cup:
   # The cup is rigidly attached to the gripper base link (no grasp physics); fingers stay closed.
+  # hang: gripper points down and pinches a vertical handle plate on the cup side (cup axis parallel
+  #       to the approach axis). side: gripper points forward, cup axis perpendicular to it.
+  mount: hang                        # TODO(real): confirm how the cup is held
+  mouth_above_grip: 0.015            # hang: cup mouth this far above the grip point (towards the flange)
   inner_radius: 0.031                # TODO(real): measure  (inner diameter 62 mm)
   inner_depth: 0.050                 # TODO(real): measure  (~151 ml)
   wall: 0.003
   bottom: 0.004
   n_wall_segments: 24
   mass: 0.060                        # empty cup + handle, kg  TODO(real): measure
-  handle: {length: 0.050, width: 0.020, height: 0.030}   # TODO(real): measure (block the fingers grip)
+  # Handle plate: length = radial reach from the cup wall, width = thickness between the fingers.
+  handle: {length: 0.050, width: 0.020, height: 0.030}   # TODO(real): measure
   # Handle grip point along the gripper approach axis (gripper base frame, m from the flange).
   grip_z: 0.150
   rgba: [0.85, 0.85, 0.80, 1.0]
@@ -80,8 +85,11 @@ particles:
 physics:
   timestep: 0.002                    # s
   integrator: implicitfast
-  iterations: 30
+  # CG: with ~2500 particle DoFs and ~1000 contacts Newton costs ~700 ms/step here (CG 30 it: 9 ms).
+  solver: CG
+  iterations: 20
   ls_iterations: 10
+  tolerance: 1.0e-8
   noslip_iterations: 0
   cone: pyramidal
   impratio: 1.0
@@ -98,6 +106,7 @@ control:
   planner_speed_deg: 180.0
   planner_acc_deg: 1145.0            # 20 rad/s^2
   latency_ms: 0.0                    # command transport delay  TODO(real): fit to step response
+  velocity_feedforward: true         # servo tracks the command stream (see control.py)  TODO(real): fit
   # Joint position servo (MuJoCo 'general' actuator, affine bias): tau = kp (q_cmd - q) - kv qdot.
   # Defaults are the Menagerie values; fit to real step responses later.
   kp: [1500, 1500, 1000, 1000, 1000, 800, 800]
@@ -114,16 +123,17 @@ cameras:
   # mujoco = x right, y up, looking along -z.  Intrinsics: fovy_deg, or fx/fy/cx/cy in pixels.
   agentview:                         # fixed side camera (RealSense D435 class)
     parent: world
-    extrinsics: {type: lookat, pos: [0.55, -0.80, 0.55], target: [0.42, -0.08, 0.08], up: [0, 0, 1]}  # TODO(real): calibrate
+    extrinsics: {type: lookat, pos: [0.60, -0.85, 0.60], target: [0.40, -0.08, 0.14], up: [0, 0, 1]}  # TODO(real): calibrate
     intrinsics: {width: 640, height: 480, fovy_deg: 42.0}   # TODO(real): calibrate
   eye_in_hand:                       # wrist camera (RealSense D405 class), on the gripper base
     parent: gripper
-    # In the gripper base frame (z = approach axis). Mounted above the fingers, looking along
-    # the approach axis at the cup mouth.
-    extrinsics: {type: lookat, pos: [-0.075, 0.0, 0.060], target: [-0.060, 0.0, 0.25], up: [-1, 0, 0]}  # TODO(real): calibrate
+    # In the gripper base frame (z = approach axis, cup on +x). Mounted on the gripper body on the
+    # side opposite the cup, looking past the fingers at the cup mouth and the bowl below.
+    extrinsics: {type: lookat, pos: [-0.085, 0.0, 0.070], target: [0.070, 0.0, 0.25], up: [0, 0, -1]}  # TODO(real): calibrate
     intrinsics: {width: 640, height: 480, fovy_deg: 58.0}   # TODO(real): calibrate
   policy_size: 84                    # images handed to the policy are resized to this (square)
-  render_size: [480, 640]            # (H, W) rendered before resizing; must match the intrinsics
+  render_size: [240, 320]            # (H, W) rendered before resizing (same aspect as the intrinsics;
+                                     # fovy is angular, so any size keeps the projection). 480x640 for full res.
   resize: center_crop_then_area      # 4:3 frame -> centre square crop -> 84x84 (INTER_AREA)
 
 task:
@@ -132,7 +142,8 @@ task:
   grid_size: 0.20
   grid_n: 5
   placement: grid                    # grid | uniform
-  home_cup_pos: [0.33, 0.0, 0.33]    # cup-mouth centre at home (world), cup upright
+  home_cup_pos: [0.40, 0.0, 0.30]    # cup-mouth centre at home (world), cup upright
+  home_cup_yaw_deg: -120.0           # pouring lip direction at home (about world z, 0 = +x)
   max_time: 30.0
   max_steps: 300
   success_fraction: 0.8              # f >= 0.8 and no safety violation

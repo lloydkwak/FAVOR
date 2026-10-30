@@ -1,0 +1,186 @@
+"""Scripted pouring demonstrations.
+
+Task-space plan (cup frame: z = cup axis, x = towards the pouring lip):
+  home -> above (lip over the bowl, raised) -> down to pouring height -> tilt about the lip's
+  horizontal axis to theta_1 (flow starts) -> slow tilt to theta_max -> hold -> back upright ->
+  retreat towards home.
+Every segment uses a minimum-jerk time law. Poses are sampled at the policy rate (10 Hz) and
+solved sequentially with healthy-robot pose IK (warm start, null-space pull to home), giving the
+10 Hz joint targets that are recorded as actions (commanded, not measured).
+Small randomisation (seeded): pouring height, lip offset, yaw of the pouring direction, tilt
+angles, segment durations, hold time.
+"""
+import math
+
+import mujoco
+import numpy as np
+
+from .mjik import SiteIK
+
+
+def min_jerk(s):
+    s = np.clip(s, 0.0, 1.0)
+    return 10 * s ** 3 - 15 * s ** 4 + 6 * s ** 5
+
+
+def rot_z(a):
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.0]])
+
+
+def rot_axis(axis, a):
+    axis = np.asarray(axis, float) / np.linalg.norm(axis)
+    K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+    return np.eye(3) + math.sin(a) * K + (1 - math.cos(a)) * K @ K
+
+
+DEFAULT_PARAMS = dict(
+    lip_height=(0.030, 0.050),        # lip above the bowl rim while pouring (m)
+    lip_offset=(-0.005, 0.020),       # lip position before the bowl centre, along the pour direction (m)
+    lateral_offset=(-0.008, 0.008),   # lip offset perpendicular to the pour direction (m)
+    # Pouring direction about world z (0 = +x). A yaw sweep over the grid corners (README, M4) found
+    # -120 deg feasible everywhere with >= 0.5 rad joint-limit margin at 125 deg tilt.
+    yaw_deg=(-130.0, -110.0),
+    above_height=0.08,                # pre-pour clearance above the rim (m)
+    theta1_deg=(55.0, 65.0),          # first tilt (flow onset)
+    theta_max_deg=(110.0, 125.0),     # final tilt
+    t_transfer=(2.6, 3.2),            # home -> above
+    t_descend=(0.9, 1.2),
+    t_tilt1=(1.2, 1.6),
+    t_tilt2=(2.0, 2.8),
+    t_hold=(1.5, 2.5),
+    t_upright=(1.4, 1.8),
+    t_retreat=(1.8, 2.4),
+)
+
+
+class ScriptedPourPlanner:
+    def __init__(self, cfg, scene, params=None):
+        self.cfg = cfg
+        self.h = scene
+        self.p = dict(DEFAULT_PARAMS, **(params or {}))
+        lim = np.radians(np.array(cfg["robot"]["joint_limits_deg"], dtype=float))
+        self.ik = SiteIK(scene.model, scene.arm_qpos, scene.arm_dof, scene.sites["cup_mouth"], lim[:, 0], lim[:, 1])
+        self.home_q = np.array(cfg["robot"]["home_q"], float)
+        self.vmax_frac = 0.9
+        self.dt = 1.0 / cfg["control"]["policy_hz"]
+        c = cfg["cup"]
+        self.lip_in_cup = np.array([c["inner_radius"] + c["wall"], 0.0, 0.0])   # relative to the mouth centre
+        b = cfg["bowl"]
+        self.rim_z = b["scale_height"] + b["bottom"] + b["depth"]
+
+    def _u(self, rng, key):
+        v = self.p[key]
+        return float(rng.uniform(*v)) if isinstance(v, (tuple, list)) else float(v)
+
+    def sample_params(self, rng):
+        return {k: self._u(rng, k) for k in self.p}
+
+    def plan(self, bowl_xy, rng, params=None):
+        P = params or self.sample_params(rng)
+        p_home, R_home = self.ik.fk(self.home_q)
+        yaw = math.radians(P["yaw_deg"])
+        R_up = rot_z(yaw)                                      # upright cup, pour direction = R_up x
+        d_pour = R_up[:, 0]
+        d_lat = R_up[:, 1]
+        lip_xy = np.asarray(bowl_xy) - P["lip_offset"] * d_pour[:2] + P["lateral_offset"] * d_lat[:2]
+        lip_pour = np.array([lip_xy[0], lip_xy[1], self.rim_z + P["lip_height"]])
+        lip_above = lip_pour + np.array([0, 0, P["above_height"]])
+        axis = d_lat                                           # tilt about the horizontal axis through the lip
+
+        def mouth_from_lip(lip, R):
+            return lip - R @ self.lip_in_cup
+
+        def tilt(theta):
+            return rot_axis(axis, theta) @ R_up
+
+        # Key poses (mouth position, cup orientation).
+        lip_home = p_home + R_home @ self.lip_in_cup
+        keys = {
+            "home": (p_home, R_home),
+            "above": (mouth_from_lip(lip_above, R_up), R_up),
+            "pour_start": (mouth_from_lip(lip_pour, R_up), R_up),
+            "tilt1": (mouth_from_lip(lip_pour, tilt(math.radians(P["theta1_deg"]))), tilt(math.radians(P["theta1_deg"]))),
+            "tilt_max": (mouth_from_lip(lip_pour, tilt(math.radians(P["theta_max_deg"]))),
+                         tilt(math.radians(P["theta_max_deg"]))),
+        }
+        retreat_lip = 0.5 * (lip_above + lip_home)
+
+        segs = []   # (duration, f(s) -> (mouth_pos, R))
+
+        def lin_seg(lip_a, Ra, lip_b, Rb, T):
+            qa, qb = np.zeros(4), np.zeros(4)
+            mujoco.mju_mat2Quat(qa, Ra.reshape(9)); mujoco.mju_mat2Quat(qb, Rb.reshape(9))
+
+            def f(s):
+                w = min_jerk(s)
+                lip = (1 - w) * lip_a + w * lip_b
+                R = _slerp_mat(qa, qb, w)
+                return mouth_from_lip(lip, R), R
+            segs.append((T, f))
+
+        def tilt_seg(th_a, th_b, T):
+            def f(s):
+                th = th_a + (th_b - th_a) * min_jerk(s)
+                R = tilt(th)
+                return mouth_from_lip(lip_pour, R), R
+            segs.append((T, f))
+
+        th1, thm = math.radians(P["theta1_deg"]), math.radians(P["theta_max_deg"])
+        lin_seg(lip_home, R_home, lip_above, R_up, P["t_transfer"])
+        lin_seg(lip_above, R_up, lip_pour, R_up, P["t_descend"])
+        tilt_seg(0.0, th1, P["t_tilt1"])
+        tilt_seg(th1, thm, P["t_tilt2"])
+        segs.append((P["t_hold"], lambda s: (mouth_from_lip(lip_pour, tilt(thm)), tilt(thm))))
+        tilt_seg(thm, 0.0, P["t_upright"])
+        lin_seg(lip_pour, R_up, retreat_lip + np.array([0, 0, 0.03]), R_home, P["t_retreat"])
+
+        # Sample at the policy rate and solve IK sequentially. A segment whose joint speed would
+        # exceed vmax_frac of the joint speed limit is slowed down and the plan is re-solved.
+        vlim = self.vmax_frac * math.radians(self.cfg["robot"]["max_joint_speed_deg"]) * self.dt
+        scale = np.ones(len(segs))
+        for _ in range(6):
+            poses, phase = [], []
+            for k, (T, f) in enumerate(segs):
+                n = max(1, int(round(T * scale[k] / self.dt)))
+                for i in range(1, n + 1):
+                    poses.append(f(i / n))
+                    phase.append(k)
+            phase = np.array(phase)
+            q = self.home_q.copy()
+            Q, errs = [], []
+            for pm, R in poses:
+                q, pe, re = self.ik.solve(pm, R, q, q_posture=self.home_q, n_iter=60, posture_gain=0.02)
+                Q.append(q.copy()); errs.append((pe, re))
+            Q = np.array(Q)
+            errs = np.array(errs)
+            dq = np.abs(np.diff(np.vstack([self.home_q, Q]), axis=0)).max(axis=1)
+            worst = np.array([dq[phase == k].max() for k in range(len(segs))])
+            if worst.max() <= vlim:
+                break
+            scale = np.where(worst > vlim, scale * worst / vlim * 1.05, scale)
+        key_q = {}
+        for name, (pm, R) in keys.items():
+            key_q[name] = self.ik.solve(pm, R, self.home_q if name == "home" else Q[-1], q_posture=self.home_q,
+                                        n_iter=200)[0]
+        # Sequential solutions are the reference joint waypoints for the policy-free diagnostics.
+        info = dict(params=P, phase=phase, segment_time_scale=scale, ik_pos_err_max=float(errs[:, 0].max()),
+                    ik_rot_err_max=float(errs[:, 1].max()), dq_max=float(np.abs(np.diff(np.vstack([self.home_q, Q]), axis=0)).max()),
+                    lip_pour=lip_pour, yaw=yaw, key_poses=keys)
+        return Q, info
+
+
+def _slerp_mat(qa, qb, w):
+    qa, qb = np.asarray(qa, float), np.asarray(qb, float)
+    dot = float(np.dot(qa, qb))
+    if dot < 0:
+        qb, dot = -qb, -dot
+    if dot > 0.9995:
+        q = qa + w * (qb - qa)
+    else:
+        th = math.acos(dot)
+        q = (math.sin((1 - w) * th) * qa + math.sin(w * th) * qb) / math.sin(th)
+    q /= np.linalg.norm(q)
+    R = np.zeros(9)
+    mujoco.mju_quat2Mat(R, q)
+    return R.reshape(3, 3)
