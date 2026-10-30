@@ -162,7 +162,7 @@ def main():
 
     os.makedirs(resolve("reports"), exist_ok=True)
     with open(resolve("reports/m6_diagnostics.csv"), "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+        w = csv.DictWriter(f, fieldnames=list(rows[0]), lineterminator="\n"); w.writeheader(); w.writerows(rows)
 
     def get(j, m, k):
         return next(r[k] for r in rows if r["joint"] == j and r["method"] == m)

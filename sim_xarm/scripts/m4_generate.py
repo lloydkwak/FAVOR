@@ -112,7 +112,7 @@ def main():
     print(f"{len(jobs)} episodes to run ({len(done)} already done) with {args.workers} workers", flush=True)
     new = not os.path.exists(summ)
     f = open(summ, "a", newline="")
-    w = csv.DictWriter(f, fieldnames=FIELDS)
+    w = csv.DictWriter(f, fieldnames=FIELDS, lineterminator="\n")
     if new:
         w.writeheader()
     t0 = time.time()
