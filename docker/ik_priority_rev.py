@@ -5,7 +5,7 @@ POSITION is corrected only inside the null space of the orientation task. Same d
 only change is the order of the two tasks.
 """
 import torch
-from ik_redistribution import rotvec_from_matrix, PANDA_Q_LO, PANDA_Q_HI
+from ik_redistribution import rotvec_from_matrix, joint_limits
 from ik_priority import _dpinv
 
 
@@ -13,7 +13,7 @@ def ik_priority_rev(kin, q_target, joint_idx, q_con, n_iter=30, lam1=0.01, lam2=
                     max_step=0.2, tol=1e-6):
     dev = q_target.device
     q_target = q_target.float()
-    lo, hi = PANDA_Q_LO.to(dev), PANDA_Q_HI.to(dev)
+    lo, hi = joint_limits(kin, dev)
     free = [k for k in range(7) if k != joint_idx]
     I6 = torch.eye(6, device=dev)
     with torch.no_grad():

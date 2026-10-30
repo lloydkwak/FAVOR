@@ -15,6 +15,14 @@ PANDA_Q_LO = torch.tensor([-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175,
 PANDA_Q_HI = torch.tensor([2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973])
 
 
+def joint_limits(kin, dev):
+    """Joint limits of the robot behind `kin`: its own q_lo / q_hi when it defines them (e.g.
+    sim_xarm XArm7Kinematics), otherwise the Panda limits above (PandaKinematics, unchanged)."""
+    lo = getattr(kin, "q_lo", PANDA_Q_LO)
+    hi = getattr(kin, "q_hi", PANDA_Q_HI)
+    return lo.to(dev), hi.to(dev)
+
+
 def rotvec_from_matrix(R):
     """(..., 3, 3) rotation matrices -> (..., 3) axis*angle vectors."""
     tr = R.diagonal(dim1=-2, dim2=-1).sum(-1)
@@ -47,7 +55,7 @@ def ik_redistribute(kin, q_target, joint_idx, q_con, n_iter=30, rot_weight=None,
     reg = IK_REG if reg is None else reg
     dev = q_target.device
     q_target = q_target.to(torch.float32)
-    lo, hi = PANDA_Q_LO.to(dev), PANDA_Q_HI.to(dev)
+    lo, hi = joint_limits(kin, dev)
     free = [k for k in range(7) if k != joint_idx]
     w = torch.tensor([1.0, 1.0, 1.0, rot_weight, rot_weight, rot_weight], device=dev)
     I6 = torch.eye(6, device=dev)

@@ -8,7 +8,7 @@ orientation, while position-only IK leaves ~3 deg tilt on j1/j3 that the null
 space could have removed.
 """
 import torch
-from ik_redistribution import rotvec_from_matrix, PANDA_Q_LO, PANDA_Q_HI
+from ik_redistribution import rotvec_from_matrix, joint_limits
 
 
 def _dpinv(A, lam):
@@ -21,7 +21,7 @@ def ik_priority(kin, q_target, joint_idx, q_con, n_iter=30, lam1=0.01, lam2=0.1,
                 max_step=0.2, tol=1e-6):
     dev = q_target.device
     q_target = q_target.float()
-    lo, hi = PANDA_Q_LO.to(dev), PANDA_Q_HI.to(dev)
+    lo, hi = joint_limits(kin, dev)
     free = [k for k in range(7) if k != joint_idx]
     I6 = torch.eye(6, device=dev)
     with torch.no_grad():
