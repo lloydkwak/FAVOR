@@ -16,14 +16,18 @@ as an option. A yaw sweep of the pouring direction over the grid corners (125° 
 `home_q = [0.2517, −0.1347, −0.1080, 1.1221, −0.0152, 1.2560, −0.8979]` (cup mouth at
 (0.40, 0, 0.30) m, upright, 0.04 mm / 0.004° after rounding).
 
-## Acceptance
+## Acceptance (final scene: collision shells, upright clearance, feedforward, no MSAA)
 
 | check | result |
 |---|---|
-| (a) upright at home for 10 s | **0 / 420** particles ever outside the cup; settled fill height 29.9 mm of 50 mm; max particle speed at the end 2.2 mm/s |
-| (b) scripted pour at the grid centre | f = **0.929** (46.4 g in the bowl), spill 3.6 g, cup residue 0 g, max tilt 123.7°, no safety flag; scale cross-check from bowl+scale contact forces 48.9 g (includes beads that landed on the scale plate) |
-| (c) real-time factor | physics: 0.27 during the pour, 0.09 while the full cup sits still (dense packing → most contacts); rendering both cameras: 0.86 s/step with CPU OSMesa (GPU EGL will be milliseconds) |
+| (a) upright at home for 10 s | **0 / 420** particles ever outside the cup; settled fill height 30.0 mm of 50 mm; max particle speed at the end 1.0 mm/s |
+| (b) scripted pour at the grid centre | f = **1.000** (50.0 g in the bowl), spill 0.0 g, cup residue 0 g, max tilt 123.7°, no safety flag, no robot-bowl contact; scale cross-check from bowl+scale contact forces **50.0 g** |
+| (c) real-time factor | physics: 0.24 during the pour, 0.14 while the full cup sits still (dense packing → most contacts); rendering both cameras: 0.34 s/step with CPU OSMesa (GPU EGL: milliseconds) |
 | (d) 84 × 84 images | `reports/m1/policy_images_84_grid.png` (rows: home, mid-pour; columns: side, wrist) and full-resolution frames in `reports/m1/` |
+
+First version of the scene (before the M4 fixes): (b) gave f = 0.929 / 0.955 with 2–4 g spill; the
+beads that were lost had tunnelled through the bowl bottom or been shaken out by cup-rim contact
+(see README, "Scene decisions").
 
 ## (c) Is it fast enough for thousands of demonstrations?
 
@@ -40,8 +44,10 @@ One scripted demonstration is ~14 s of simulated time + 1 s settling at reset + 
 | 8 mm | 178 | 10 | 0.208 | 39.6 | 2.69 | 6 |
 | 8 mm | 178 | 20 | 0.955 | 2.2 | 0.95 | 17 |
 
-(The sweep rows were run before velocity feedforward was enabled in M2; the 6 mm / 20 row gives
-both runs.) With 10 CG iterations the beads pass through the cup walls during the transfer
+(The sweep rows were run before velocity feedforward (M2) and the collision shells / upright
+clearance (M4); they measure speed and the iteration threshold, not the final f. The 6 mm / 20 row
+gives both runs. With the final scene the same pour gives f = 1.000 and the 250 M4 demonstrations
+mean f 1.000; their measured wall time on this machine was 55–75 s per episode per core.) With 10 CG iterations the beads pass through the cup walls during the transfer
 (f ≈ 0.1–0.2), so **20 iterations is the minimum**; 7 mm gives identical f at 20 and 30.
 
 Judgement: with the 6 mm default, one core makes ~50–60 demonstrations per hour (physics only,
