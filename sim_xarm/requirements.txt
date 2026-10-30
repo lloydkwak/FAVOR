@@ -1,0 +1,8 @@
+mujoco==3.17.0
+pytorch_kinematics==0.10.0
+torch
+numpy
+h5py
+opencv-python-headless
+PyYAML
+matplotlib
