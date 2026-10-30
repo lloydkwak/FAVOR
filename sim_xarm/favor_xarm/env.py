@@ -21,6 +21,17 @@ def mat2quat_xyzw(R):
     return np.array([q[1], q[2], q[3], q[0]])
 
 
+def quat_continuous(qs):
+    """Flip signs along a sequence of quaternions so consecutive ones lie in the same hemisphere
+    (q and -q are the same rotation; the canonical w >= 0 form jumps when the rotation angle passes
+    180 deg, which the pouring tilt + yaw does). The first quaternion keeps its canonical sign."""
+    qs = np.array(qs, dtype=np.float64, copy=True)
+    for t in range(1, len(qs)):
+        if np.dot(qs[t], qs[t - 1]) < 0:
+            qs[t] = -qs[t]
+    return qs
+
+
 def grid_positions(cfg):
     t = cfg["task"]
     n, s = t["grid_n"], t["grid_size"]
@@ -59,6 +70,11 @@ class PourEnv:
         self.self_collision_whitelist = set()
         self.t = 0.0
         self.step_count = 0
+        self.randomizer = None
+        if cfg.get("randomization", {}).get("enabled", False):
+            from .randomization import DomainRandomizer
+            self.randomizer = DomainRandomizer(self)
+        self.dr_sample = {}
 
     # ------------------------------------------------------------------ reset
     def set_bowl_xy(self, xy):
@@ -81,7 +97,7 @@ class PourEnv:
     def _spawn_particles(self, rng):
         c, p = self.cfg["cup"], self.cfg["particles"]
         n = len(self.h.particle_qpos)
-        r = p["diameter_mm"] / 2000.0
+        r = getattr(self, "_bead_diameter_mm", p["diameter_mm"]) / 2000.0
         sp = 2 * r * 1.04
         R_in = c["inner_radius"] - r - 0.0005
         pts = []
@@ -118,6 +134,9 @@ class PourEnv:
         self._set_arm(self.home_q)
         if self.h.gripper_act >= 0:
             self.d.ctrl[self.h.gripper_act] = self.cfg["robot"]["gripper"]["closed_ctrl"]
+        if self.randomizer is not None:
+            self.dr_sample = self.randomizer.sample(np.random.default_rng([seed, 77]))
+            self._bead_diameter_mm = self.dr_sample["bead_diameter_mm"]
         self.fill_height = self._spawn_particles(rng)
         mujoco.mj_forward(self.m, self.d)
         self.ctl.reset(self.home_q)
@@ -129,6 +148,7 @@ class PourEnv:
         self.t = 0.0
         self.step_count = 0
         self.safety = {"table_contact": 0, "self_collision": 0, "joint_limit": 0, "first": None}
+        self.cup_bowl_contact = 0          # informational (not a safety violation in the task spec)
         self.max_tilt = 0.0
         if self.fault is not None:
             self.fault.on_reset(self)
@@ -179,6 +199,8 @@ class PourEnv:
         tab = (a_rob & self._is_table[g2]) | (b_rob & self._is_table[g1])
         if tab.any():
             self._flag("table_contact")
+        if ((a_rob & self._is_bowlobj[g2]) | (b_rob & self._is_bowlobj[g1])).any():
+            self.cup_bowl_contact += 1
         both = self._is_robot[g1] & self._is_robot[g2]
         cup_rob = (self._is_robot[g1] & np.isin(g2, self.h.geom_groups["cup"])) | \
                   (self._is_robot[g2] & np.isin(g1, self.h.geom_groups["cup"]))
@@ -250,7 +272,7 @@ class PourEnv:
                 "bowl_force_g": 1000.0 * self.bowl_contact_mass(),
                 "safety_violation": bool(self.safety_violated()),
                 "success": bool(f >= self.cfg["task"]["success_fraction"] and not self.safety_violated()),
-                "max_tilt_deg": math.degrees(self.max_tilt), **{f"safety_{k}": v for k, v in self.safety.items()}}
+                "max_tilt_deg": math.degrees(self.max_tilt), "robot_bowl_contact_ticks": self.cup_bowl_contact, **{f"safety_{k}": v for k, v in self.safety.items()}}
 
     # ------------------------------------------------------------------ observation
     def site_pose(self, name):
@@ -264,14 +286,44 @@ class PourEnv:
     def joint_pos(self):
         return self.d.qpos[self.h.arm_qpos].copy()
 
-    def render(self, cam, hw=None):
-        hw = hw or tuple(self.cfg["cameras"]["render_size"])
-        key = (cam, hw)
+    def _raw_render(self, cam, H, W, fovy=None):
+        key = (H, W)
         if key not in self._renderers:
-            self._renderers[key] = mujoco.Renderer(self.m, hw[0], hw[1])
+            self._renderers[key] = mujoco.Renderer(self.m, H, W)
         r = self._renderers[key]
-        r.update_scene(self.d, camera=self.h.cameras[cam])
-        return r.render()
+        cid = self.h.cameras[cam]
+        if fovy is not None:
+            old = self.m.cam_fovy[cid]
+            self.m.cam_fovy[cid] = fovy
+        r.update_scene(self.d, camera=cid)
+        img = r.render()
+        if fovy is not None:
+            self.m.cam_fovy[cid] = old
+        return img
+
+    def render(self, cam, hw=None):
+        """RGB frame (H, W, 3) uint8, row 0 = top. hw defaults to cameras.render_size.
+        Pinhole intrinsics fx/fy/cx/cy (pixels at intrinsics.width x height) are applied exactly:
+        a square-pixel image with focal fy is rendered with margins and cropped/resized so that
+        u = fx X/Z + cx, v = fy Y/Z + cy (OpenCV convention), scaled to hw."""
+        import cv2
+        H, W = hw or tuple(self.cfg["cameras"]["render_size"])
+        intr = self.cfg["cameras"][cam]["intrinsics"]
+        if "fx" not in intr:
+            return self._raw_render(cam, H, W)
+        s = H / intr["height"]
+        fx, fy, cx, cy = intr["fx"] * W / intr["width"], intr["fy"] * s, intr["cx"] * W / intr["width"], intr["cy"] * s
+        f = fy                                            # square pixels in the raw render
+        x0 = cx * f / fx                                  # raw columns left / right of the principal point
+        x1 = (W - cx) * f / fx
+        half_w = int(math.ceil(max(x0, x1))) + 1
+        half_h = int(math.ceil(max(cy, H - cy))) + 1
+        Hp, Wp = 2 * half_h, 2 * half_w
+        fovy = math.degrees(2 * math.atan(0.5 * Hp / f))
+        raw = self._raw_render(cam, Hp, Wp, fovy=fovy)
+        top = int(round(half_h - cy))
+        crop = raw[top:top + H, int(round(half_w - x0)):int(round(half_w + x1))]
+        return cv2.resize(crop, (W, H), interpolation=cv2.INTER_AREA if fx < f else cv2.INTER_LINEAR)
 
     def policy_image(self, cam):
         import cv2
@@ -286,7 +338,11 @@ class PourEnv:
     def observe(self, images=None):
         images = self.render_enabled if images is None else images
         p, R = self.site_pose(self.cfg["observation"]["eef_frame"])
-        obs = {"robot0_eef_pos": p.astype(np.float32), "robot0_eef_quat": mat2quat_xyzw(R).astype(np.float32),
+        q = mat2quat_xyzw(R)
+        if self.step_count > 0 and getattr(self, "_last_quat", None) is not None and np.dot(q, self._last_quat) < 0:
+            q = -q                    # same rule as quat_continuous(); restarts at every reset()
+        self._last_quat = q
+        obs = {"robot0_eef_pos": p.astype(np.float32), "robot0_eef_quat": q.astype(np.float32),
                "robot0_joint_pos": self.joint_pos().astype(np.float32)}
         if images:
             obs["agentview_image"] = self.policy_image("agentview")

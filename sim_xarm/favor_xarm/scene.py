@@ -95,6 +95,20 @@ def _ring(body, name, r_in, wall, z0, height, n, rgba, **kw):
             setattr(g, k2, v)
 
 
+VIS = dict(contype=0, conaffinity=0, group=1)
+
+
+def _collision_shell(body, name, r_in, wall, bottom, z_inner_bottom, height, n, extra):
+    """Invisible collision shell (group 3, zero density) for a container: same inner surface as the
+    visual geometry, walls and bottom thickened outward / downward by `extra` so small fast beads
+    cannot tunnel through a 3-4 mm wall under the soft CG contact solution."""
+    hide = dict(group=3, density=0.0)
+    w, b = wall + extra, bottom + extra
+    body.add_geom(name=f"{name}_bottom_col", type=mujoco.mjtGeom.mjGEOM_CYLINDER, size=[r_in + w, b / 2, 0],
+                  pos=[0, 0, z_inner_bottom - b / 2], rgba=[0.5, 0.5, 0.5, 0.0], **hide)
+    _ring(body, f"{name}_col", r_in, w, z_inner_bottom - b, height + b, n, [0.5, 0.5, 0.5, 0.0], **hide)
+
+
 def _add_table(spec, cfg):
     t = cfg["table"]
     wb = spec.worldbody
@@ -123,8 +137,12 @@ def _add_bowl(spec, cfg):
     bowl = sc.add_body(name="bowl", pos=[0, 0, b["scale_height"]])
     spec.add_material(name="bowl_mat", rgba=b["rgba"])
     bowl.add_geom(name="bowl_bottom", type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-                  size=[b["inner_radius"] + b["wall"], b["bottom"] / 2, 0], pos=[0, 0, b["bottom"] / 2], material="bowl_mat")
-    _ring(bowl, "bowl", b["inner_radius"], b["wall"], 0.0, b["depth"] + b["bottom"], b["n_wall_segments"], b["rgba"])
+                  size=[b["inner_radius"] + b["wall"], b["bottom"] / 2, 0], pos=[0, 0, b["bottom"] / 2], material="bowl_mat",
+                  **VIS)
+    _ring(bowl, "bowl", b["inner_radius"], b["wall"], 0.0, b["depth"] + b["bottom"], b["n_wall_segments"], b["rgba"], **VIS)
+    # The collision bottom may extend into the scale plate (both static: no contact between them).
+    _collision_shell(bowl, "bowl", b["inner_radius"], b["wall"], b["bottom"], b["bottom"], b["depth"],
+                     b["n_wall_segments"], cfg["physics"].get("collision_shell_extra", 0.008))
     bowl.add_site(name="bowl_inner_bottom", pos=[0, 0, b["bottom"]], size=[0.003, 0, 0], rgba=[1, 0, 0, 1], group=4)
 
 
@@ -167,10 +185,12 @@ def _add_cup(spec, cfg, gripper_body, grip_z):
             "handle": 8 * handle_size[0] * handle_size[1] * handle_size[2]}
     rho = c["mass"] / (vols["bottom"] + n * vols["wall"] + vols["handle"])
     cup.add_geom(name="cup_bottom", type=mujoco.mjtGeom.mjGEOM_CYLINDER, size=[r_out, c["bottom"] / 2, 0],
-                 pos=[0, 0, -c["bottom"] / 2], material="cup_mat", mass=rho * vols["bottom"])
-    _ring(cup, "cup", c["inner_radius"], c["wall"], -c["bottom"], total_h, n, c["rgba"], mass=rho * vols["wall"])
+                 pos=[0, 0, -c["bottom"] / 2], material="cup_mat", mass=rho * vols["bottom"], **VIS)
+    _ring(cup, "cup", c["inner_radius"], c["wall"], -c["bottom"], total_h, n, c["rgba"], mass=rho * vols["wall"], **VIS)
     cup.add_geom(name="cup_handle", type=mujoco.mjtGeom.mjGEOM_BOX, size=handle_size, pos=handle_pos,
                  material="cup_mat", mass=rho * vols["handle"])
+    _collision_shell(cup, "cup", c["inner_radius"], c["wall"], c["bottom"], 0.0, c["inner_depth"], n,
+                     cfg["physics"].get("collision_shell_extra", 0.008))
     cup.add_site(name="cup_mouth", pos=[0, 0, c["inner_depth"]], size=[0.003, 0, 0], rgba=[0, 1, 0, 1], group=4)
     cup.add_site(name="cup_inner_bottom", pos=[0, 0, 0], size=[0.003, 0, 0], rgba=[0, 0, 1, 1], group=4)
     cup.add_site(name="cup_lip", pos=[c["inner_radius"] + c["wall"], 0, c["inner_depth"]], size=[0.003, 0, 0],
@@ -204,17 +224,14 @@ def _add_cameras(spec, cfg, gripper_body):
         pos, quat = camera_pose_from_cfg(c["extrinsics"])
         cam = parent.add_camera(name=name, pos=pos.tolist(), quat=quat.tolist())
         intr = c["intrinsics"]
+        # fx/fy/cx/cy intrinsics are realised at render time (PourEnv.render: square-pixel render
+        # with fovy from fy, then crop/resize to put the principal point at (cx, cy)); MuJoCo's own
+        # sensorsize/principal path did not reproduce the OpenCV projection in tests/test_camera.py.
         if "fx" in intr:
-            w, h = intr["width"], intr["height"]
-            # Pixel-unit sensor: focal / principal given in pixels (MuJoCo: principal = offset of the
-            # principal point from the image centre). Verified by projection test (tests/test_camera.py).
-            cam.resolution = [w, h]
-            cam.sensor_size = [float(w), float(h)]
-            cam.focal_length = [float(intr["fx"]), float(intr["fy"])]
-            cam.principal_length = [float(intr["cx"] - w / 2.0), float(intr["cy"] - h / 2.0)]
+            cam.fovy = math.degrees(2 * math.atan(0.5 * intr["height"] / float(intr["fy"])))
         else:
             cam.fovy = float(intr["fovy_deg"])
-            cam.resolution = [intr["width"], intr["height"]]
+        cam.resolution = [intr["width"], intr["height"]]
 
 
 def build_scene(cfg, n_particles=None):
@@ -245,6 +262,9 @@ def build_scene(cfg, n_particles=None):
     spec.option.impratio = ph["impratio"]
     spec.visual.global_.offwidth = 1280
     spec.visual.global_.offheight = 960
+    q = cfg["cameras"].get("quality", {})
+    spec.visual.quality.offsamples = int(q.get("offsamples", 0))
+    spec.visual.quality.shadowsize = int(q.get("shadow_size", 2048))
     spec.visual.headlight.diffuse = [0.4, 0.4, 0.4]
     spec.visual.headlight.ambient = [0.25, 0.25, 0.25]
     spec.add_texture(name="floor_tex", type=mujoco.mjtTexture.mjTEXTURE_2D, builtin=mujoco.mjtBuiltin.mjBUILTIN_CHECKER,
@@ -287,6 +307,8 @@ def build_scene(cfg, n_particles=None):
         L = spec.worldbody.add_light(name=nm, pos=lp, dir=ld, diffuse=[dif] * 3, castshadow=sh)
         L.type = mujoco.mjtLightType.mjLIGHT_DIRECTIONAL
     _add_table(spec, cfg)
+    from .randomization import add_table_textures
+    add_table_textures(spec)                 # unused unless randomization.enabled
     _add_bowl(spec, cfg)
     grip_z = cfg["cup"].get("grip_z", ginfo["grip_z"])
     _add_cup(spec, cfg, ginfo["body"], grip_z)

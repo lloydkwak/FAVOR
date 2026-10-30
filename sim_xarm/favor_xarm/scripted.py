@@ -9,6 +9,13 @@ solved sequentially with healthy-robot pose IK (warm start, null-space pull to h
 10 Hz joint targets that are recorded as actions (commanded, not measured).
 Small randomisation (seeded): pouring height, lip offset, yaw of the pouring direction, tilt
 angles, segment durations, hold time.
+
+Clearance: while the cup is upright its bottom hangs (inner depth + bottom) below the lip and,
+with the lip over the bowl, the cup body overlaps the bowl rim footprint. The upright cup is
+therefore brought only to lip = rim + (depth + bottom + upright_clearance); the lip descends to
+the pouring height during the first tilt (the cup body swings up as it turns) and rises again
+while the cup comes back upright. (A first version lowered the upright cup into the rim: the
+cup-bowl contact shook the beads out.)
 """
 import math
 
@@ -41,7 +48,8 @@ DEFAULT_PARAMS = dict(
     # Pouring direction about world z (0 = +x). A yaw sweep over the grid corners (README, M4) found
     # -120 deg feasible everywhere with >= 0.5 rad joint-limit margin at 125 deg tilt.
     yaw_deg=(-130.0, -110.0),
-    above_height=0.08,                # pre-pour clearance above the rim (m)
+    above_height=0.06,                # pre-pour approach height above the upright-clearance height (m)
+    upright_clearance=0.012,          # cup bottom above the rim while upright (m)
     theta1_deg=(55.0, 65.0),          # first tilt (flow onset)
     theta_max_deg=(110.0, 125.0),     # final tilt
     t_transfer=(2.6, 3.2),            # home -> above
@@ -68,6 +76,7 @@ class ScriptedPourPlanner:
         self.lip_in_cup = np.array([c["inner_radius"] + c["wall"], 0.0, 0.0])   # relative to the mouth centre
         b = cfg["bowl"]
         self.rim_z = b["scale_height"] + b["bottom"] + b["depth"]
+        self.cup_hang = c["inner_depth"] + c["bottom"]          # cup bottom below the lip when upright
 
     def _u(self, rng, key):
         v = self.p[key]
@@ -85,7 +94,8 @@ class ScriptedPourPlanner:
         d_lat = R_up[:, 1]
         lip_xy = np.asarray(bowl_xy) - P["lip_offset"] * d_pour[:2] + P["lateral_offset"] * d_lat[:2]
         lip_pour = np.array([lip_xy[0], lip_xy[1], self.rim_z + P["lip_height"]])
-        lip_above = lip_pour + np.array([0, 0, P["above_height"]])
+        lip_up = np.array([lip_xy[0], lip_xy[1], self.rim_z + self.cup_hang + P["upright_clearance"]])
+        lip_above = lip_up + np.array([0, 0, P["above_height"]])
         axis = d_lat                                           # tilt about the horizontal axis through the lip
 
         def mouth_from_lip(lip, R):
@@ -99,7 +109,7 @@ class ScriptedPourPlanner:
         keys = {
             "home": (p_home, R_home),
             "above": (mouth_from_lip(lip_above, R_up), R_up),
-            "pour_start": (mouth_from_lip(lip_pour, R_up), R_up),
+            "pour_start": (mouth_from_lip(lip_up, R_up), R_up),
             "tilt1": (mouth_from_lip(lip_pour, tilt(math.radians(P["theta1_deg"]))), tilt(math.radians(P["theta1_deg"]))),
             "tilt_max": (mouth_from_lip(lip_pour, tilt(math.radians(P["theta_max_deg"]))),
                          tilt(math.radians(P["theta_max_deg"]))),
@@ -119,21 +129,24 @@ class ScriptedPourPlanner:
                 return mouth_from_lip(lip, R), R
             segs.append((T, f))
 
-        def tilt_seg(th_a, th_b, T):
+        def tilt_seg(th_a, th_b, T, lip_a=None, lip_b=None):
+            lip_a = lip_pour if lip_a is None else lip_a
+            lip_b = lip_pour if lip_b is None else lip_b
+
             def f(s):
-                th = th_a + (th_b - th_a) * min_jerk(s)
-                R = tilt(th)
-                return mouth_from_lip(lip_pour, R), R
+                w = min_jerk(s)
+                R = tilt(th_a + (th_b - th_a) * w)
+                return mouth_from_lip((1 - w) * lip_a + w * lip_b, R), R
             segs.append((T, f))
 
         th1, thm = math.radians(P["theta1_deg"]), math.radians(P["theta_max_deg"])
         lin_seg(lip_home, R_home, lip_above, R_up, P["t_transfer"])
-        lin_seg(lip_above, R_up, lip_pour, R_up, P["t_descend"])
-        tilt_seg(0.0, th1, P["t_tilt1"])
+        lin_seg(lip_above, R_up, lip_up, R_up, P["t_descend"])
+        tilt_seg(0.0, th1, P["t_tilt1"], lip_up, lip_pour)
         tilt_seg(th1, thm, P["t_tilt2"])
         segs.append((P["t_hold"], lambda s: (mouth_from_lip(lip_pour, tilt(thm)), tilt(thm))))
-        tilt_seg(thm, 0.0, P["t_upright"])
-        lin_seg(lip_pour, R_up, retreat_lip + np.array([0, 0, 0.03]), R_home, P["t_retreat"])
+        tilt_seg(thm, 0.0, P["t_upright"], lip_pour, lip_up)
+        lin_seg(lip_up, R_up, retreat_lip + np.array([0, 0, 0.03]), R_home, P["t_retreat"])
 
         # Sample at the policy rate and solve IK sequentially. A segment whose joint speed would
         # exceed vmax_frac of the joint speed limit is slowed down and the plan is re-solved.
