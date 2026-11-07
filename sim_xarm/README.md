@@ -128,21 +128,40 @@ python tests/test_camera.py && python tests/test_faults.py
 Large-scale data with continuous bowl positions: `m4_generate.py --set task.placement=uniform --n N`;
 domain randomisation: `--set randomization.enabled=true`. Generation resumes from `summary.csv`.
 
-## diffusion_policy
+## Training and evaluation (diffusion_policy)
 
 `third_party/DIFFUSION_POLICY_COMMIT` (`20537a5`) is not in the public diffusion_policy repository,
-and the FAVOR patch modifies `robomimic_replay_joint_action_dataset.py`, which upstream does not
-have. sim_xarm therefore does not depend on that dataset class: `dp/xarm_pour_dataset.py` is
-self-contained on upstream components (replay buffer, sampler, normalisers; no pytorch3d) and
-range-normalises the 7-D joint action (upstream `RobomimicReplayImageDataset` would give it an
-identity normaliser with `abs_action: False`, or a rot6d conversion with `True`).
+so sim_xarm uses upstream `5ba07ac` with its own dataset class (`dp/xarm_pour_dataset.py`, 7-D joint
+action range-normalised; no pytorch3d) and env runner (`dp/xarm_pour_runner.py`). Same conda env as
+the simulator.
 
 ```bash
-cp sim_xarm/dp/xarm_pour_image_joint.yaml diffusion_policy/diffusion_policy/config/task/
-export PYTHONPATH=$PWD/sim_xarm/dp:$PWD/sim_xarm:$PYTHONPATH
-cd diffusion_policy && python train.py --config-name=train_diffusion_unet_hybrid_workspace.yaml \
-  task=xarm_pour_image_joint task.dataset_path=/path/xarm_pour.hdf5 +checkpoint=joint_trainloss_topk
+conda activate sim_xarm && cd ~/FAVOR/sim_xarm
+dp/install_dp.sh                                   # once: clones ~/diffusion_policy @5ba07ac, pinned deps, task yaml
+# data: 500 scripted demos, continuous bowl positions (training seeds 0..499)
+OMP_NUM_THREADS=1 python scripts/m4_generate.py --out out/m4_train500 --n 500 --workers 10 --set task.placement=uniform
+python scripts/m5_export.py --run out/m4_train500 --out out/xarm_pour_500.hdf5 --workers 8
+DIFFUSION_POLICY_ROOT=~/diffusion_policy python tests/test_dp_dataset.py out/xarm_pour_500.hdf5
+# GPU smoke run (minutes), then the real run
+dp/train.sh out/xarm_pour_500.hdf5 smoke training.num_epochs=2 training.max_train_steps=50 task.env_runner.n_test=5
+dp/train.sh out/xarm_pour_500.hdf5 pour500
+# evaluation on the 25-cell grid (seeds 10000+), DDIM 10
+DIFFUSION_POLICY_ROOT=~/diffusion_policy python scripts/m9_eval.py --ckpt out/train/pour500/checkpoints/<best>.ckpt --reps 2
+DIFFUSION_POLICY_ROOT=~/diffusion_policy python scripts/m9_eval.py --ckpt ... --faults "locked:1,locked:6" --methods "B1,W-IK pos,W-IK pose,Priority IK,Priority IK (orient. first)"
 ```
 
-Rollouts and fault conditions: `scripts/m8_rollout.py --ckpt ... [--fault-joint 6 --method "Priority IK"]`
-(import order matters: torchvision before mujoco, else triton segfaults with the GL backend).
+- Policy and training = upstream `train_diffusion_unet_hybrid_workspace` defaults, as in the LIBERO
+  runs (CNN U-Net 512/1024/2048, ε-prediction, DDPM 100 training steps, horizon 16, n_obs 2,
+  n_action 8, crop 76, batch 64, EMA), 100 epochs. Checkpoints: top 5 by `test_mean_score` = success
+  of 25 no-fault rollouts (one per grid cell, seeds 100000+) every 10 epochs, as LIBERO selected by
+  success (`favor_fault_runner`, 50 rollouts).
+- Inference in the runner and in `m9_eval.py`: DDIM 10 steps with the trained noise schedule (the
+  real-robot plan: train DDPM 100, run DDIM 10). `--sampler ddpm` for the 100-step sampler.
+- Rollouts run in parallel env processes; the policy noise is seeded per (episode seed, policy call),
+  so methods and fault conditions are paired by seed. Repeat runs are bit-identical on CPU (GPU cuDNN
+  kernels may add tiny differences).
+- A trial ends at 30 s, or earlier once the cup has been tilted > 60°, is back < 10° and the arm has
+  been still for 1 s (`--no-early-stop` to always run 30 s). Success: f ≥ 0.8 and no safety violation.
+  `summary.md` reports the sim counterpart of the pre-registered gate (success ≥ 0.75 and mean f ≥ 0.85).
+- Seeds: demos < 10000, evaluation 10000+, in-training rollouts 100000+.
+

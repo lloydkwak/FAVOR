@@ -1,0 +1,23 @@
+# diffusion_policy training/evaluation on top of sim_xarm/requirements.txt (same conda env).
+# Versions validated with diffusion_policy 5ba07ac on Python 3.13 (2026-11). robomimic is installed
+# separately with --no-deps by install_dp.sh (its pinned deps conflict with this stack).
+zarr==2.18.4
+numcodecs==0.15.2
+imagecodecs
+numba
+hydra-core==1.3.8
+omegaconf==2.3.1
+einops
+dill
+diffusers==0.11.1
+huggingface_hub==0.25.2
+wandb==0.17.9
+scipy
+pandas
+filelock
+threadpoolctl
+psutil
+tqdm
+termcolor
+tensorboardX
+imageio

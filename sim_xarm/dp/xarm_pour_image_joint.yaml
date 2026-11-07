@@ -1,8 +1,6 @@
 # diffusion_policy task config for the sim_xarm pouring data (7-D absolute joint targets, no gripper).
-# Install: copy to diffusion_policy/diffusion_policy/config/task/ and put sim_xarm/dp on PYTHONPATH
-# (the dataset and runner classes live there), e.g.
-#   cp sim_xarm/dp/xarm_pour_image_joint.yaml diffusion_policy/diffusion_policy/config/task/
-#   export PYTHONPATH=$PWD/sim_xarm/dp:$PWD/sim_xarm:$PYTHONPATH
+# Installed by sim_xarm/dp/install_dp.sh (copies this file into diffusion_policy's config/task/);
+# sim_xarm/dp/train.sh sets PYTHONPATH for the dataset and runner classes.
 # Policy structure is the one used for LIBERO (CNN, eps-prediction, horizon 16, n_obs 2, n_action 8);
 # those live in the workspace config, not here.
 name: xarm_pour_image_joint
@@ -30,9 +28,24 @@ dataset_path: /workspace/data/sim_xarm/xarm_pour/image_joint.hdf5   # override: 
 abs_action: &abs_action True
 
 env_runner:
-  # Training-time rollouts are off (NullRunner); evaluation runs through sim_xarm/scripts/m8_rollout.py.
-  _target_: xarm_pour_runner.NullRunner
+  # No-fault rollouts during training on fixed seeds (one per grid cell), logged as
+  # test_mean_score = success rate, so the upstream checkpoint.topk (test_mean_score, max, k=5)
+  # keeps the 5 best checkpoints by task success -- as the LIBERO runs did (n_test 50 there).
+  # Set training.rollout_every == training.checkpoint_every. Inference as in the evaluation and
+  # the real-robot plan: DDIM 10 steps. Use xarm_pour_runner.NullRunner to train without rollouts
+  # (then checkpoint on train_loss).
+  _target_: xarm_pour_runner.PourEnvRunner
   output_dir: ${hydra:runtime.output_dir}
+  shape_meta: *shape_meta
+  n_obs_steps: ${n_obs_steps}
+  n_action_steps: ${n_action_steps}
+  n_test: 25
+  test_start_seed: 100000
+  n_workers: 8
+  sampler: ddim
+  inference_steps: 10
+  max_steps: 300
+  config_overrides: []
 
 dataset:
   _target_: xarm_pour_dataset.XArmPourImageDataset
