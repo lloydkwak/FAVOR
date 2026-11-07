@@ -92,6 +92,7 @@ compensation. Force limits not checked against rated torques (**TODO(real)**). F
 ## Running the milestones (one line each, from `sim_xarm/`)
 
 ```bash
+python scripts/view.py                                        # interactive viewer, scripted pours (needs a display)
 python scripts/m0_inspect_model.py
 python scripts/solve_home.py                                   # prints home_q for config
 python scripts/m1_scene_check.py                               # reports/m1_scene.md numbers
