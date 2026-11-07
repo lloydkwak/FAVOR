@@ -130,17 +130,27 @@ cameras:
   # {type: matrix, T: 4x4 row-major, convention: opencv|mujoco, parent: world|wrist_mount}.
   # opencv = camera x right, y down, z forward (what a calibration toolbox returns);
   # mujoco = x right, y up, looking along -z.  Intrinsics: fovy_deg, or fx/fy/cx/cy in pixels.
-  agentview:                         # fixed side camera (RealSense D435 class)
+  # Both cameras are Intel RealSense D435. Colour stream at 640 x 480: vertical FOV ~42 deg
+  # (fx = fy ~ 615 px). Replace with the calibrated fx/fy/cx/cy and extrinsics of the real cameras.
+  agentview:                         # fixed side camera (RealSense D435)
     parent: world
-    extrinsics: {type: lookat, pos: [0.60, -0.85, 0.60], target: [0.40, -0.08, 0.14], up: [0, 0, 1]}  # TODO(real): calibrate
+    extrinsics: {type: lookat, pos: [0.62, -0.85, 0.62], target: [0.40, -0.06, 0.20], up: [0, 0, 1]}  # TODO(real): calibrate
     intrinsics: {width: 640, height: 480, fovy_deg: 42.0}   # TODO(real): calibrate
-  eye_in_hand:                       # wrist camera (RealSense D405 class), on the gripper base
+  eye_in_hand:                       # wrist camera (RealSense D435), on top of the gripper housing
     parent: gripper
-    # In the gripper base frame (z = approach axis, -x = up while the cup is upright, cup lip on +y).
-    # Above the gripper housing, in front of it, looking down past the cup towards the lip side so
-    # the cup mouth, the bowl and the bead stream are all in view.
-    extrinsics: {type: lookat, pos: [-0.13, 0.0, 0.09], target: [0.08, 0.08, 0.22], up: [-1, 0, 0]}  # TODO(real): calibrate
-    intrinsics: {width: 640, height: 480, fovy_deg: 58.0}   # TODO(real): calibrate
+    # Gripper base frame: z = approach axis, -x = up while the cup is upright (housing top at
+    # x = -0.037), y = finger-closing axis, flange at z = 0. As in the lab photo (2026-11-07): the
+    # D435 sits on a short bracket on the housing top near the flange, long side along y, looking
+    # straight forward along the approach axis. The pose below is the colour lens.
+    # Straight forward (0 deg), as in the photo. To tilt the camera down by t deg (bracket change on the
+    # real robot too): target = pos + [sin t, 0, cos t], up = [-cos t, 0, sin t].
+    extrinsics: {type: lookat, pos: [-0.0615, 0.037, 0.041], target: [-0.0615, 0.037, 0.30], up: [-1, 0, 0]}  # TODO(real): calibrate
+    intrinsics: {width: 640, height: 480, fovy_deg: 42.0}   # TODO(real): calibrate
+    # Housing 90 x 25 x 25 mm. Lens x positions on the front face, camera frame (x = image right):
+    # colour lens at -37 mm, IR imagers at -27 / +23 mm, projector at +8 mm (from the photo). Which
+    # end of the camera faces +y (the lip side) is TODO(real). bracket: 12 mm from the housing top.
+    body: {enabled: true, size: [0.090, 0.025, 0.025], lens: [-0.037, 0.0], lenses_x: [-0.037, -0.027, 0.008, 0.023],
+           bracket: {from: [-0.036, 0.02, 0.0275], at_x: -0.02, width: 0.020, thickness: 0.004}}  # TODO(real): measure the mount
   policy_size: 84                    # images handed to the policy are resized to this (square)
   render_size: [240, 320]            # (H, W) rendered before resizing (same aspect as the intrinsics;
                                      # fovy is angular, so any size keeps the projection). 480x640 for full res.

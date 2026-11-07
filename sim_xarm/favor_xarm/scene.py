@@ -273,6 +273,55 @@ def _add_cameras(spec, cfg, gripper_body):
         else:
             cam.fovy = float(intr["fovy_deg"])
         cam.resolution = [intr["width"], intr["height"]]
+        if c.get("body", {}).get("enabled", False):
+            _add_camera_body(spec, parent, name, pos, quat, c["body"])
+
+
+def _add_camera_body(spec, parent, name, pos, quat, b):
+    """Physical camera housing (and optional bracket) for a camera, so it shows up in the viewer and
+    in the other camera's images and is part of the collision checks.
+
+    b.size     : housing [width (camera x), height (camera y), depth (along the optical axis)], m.
+                 RealSense D435: 90 x 25 x 25 mm.
+    b.lens     : position of the colour lens on the front face relative to the face centre, in the
+                 camera frame [x, y] (x = image right, y = image up). The camera pose (extrinsics)
+                 is the colour lens; the housing is placed so that lens sits at this offset.
+    b.lenses_x : x of the visible lens discs on the front face (decoration only, no collision).
+    b.bracket  : {from: point on the parent body (parent frame), at_x: x on the housing bottom face
+                 where the bracket meets it (camera frame), width, thickness}.
+    The housing lies behind the image plane (the camera looks along -z), so it never occludes its
+    own image."""
+    R = np.zeros(9)
+    mujoco.mju_quat2Mat(R, np.asarray(quat, float))
+    R = R.reshape(3, 3)
+    w, hgt, dep = b.get("size", [0.090, 0.025, 0.025])
+    lx, ly = b.get("lens", [0.0, 0.0])
+    spec.add_material(name=f"{name}_body_mat", rgba=b.get("rgba", [0.70, 0.71, 0.73, 1.0]))
+    spec.add_material(name=f"{name}_bracket_mat", rgba=[0.08, 0.08, 0.09, 1.0])
+    face = np.asarray(pos, float) - R @ np.array([lx, ly, 0.0])          # front-face centre
+    centre = face + R @ np.array([0.0, 0.0, dep / 2 + 0.001])
+    parent.add_geom(name=f"{name}_housing", type=mujoco.mjtGeom.mjGEOM_BOX, size=[w / 2, hgt / 2, dep / 2],
+                    pos=centre.tolist(), quat=list(quat), material=f"{name}_body_mat", mass=b.get("mass", 0.072))
+    for k, x in enumerate(b.get("lenses_x", [lx])):
+        lp = face + R @ np.array([x, ly, 0.0005])
+        parent.add_geom(name=f"{name}_lens{k}", type=mujoco.mjtGeom.mjGEOM_CYLINDER, size=[0.0045, 0.0004, 0],
+                        pos=lp.tolist(), quat=list(quat), rgba=[0.02, 0.02, 0.03, 1], contype=0, conaffinity=0,
+                        group=1, mass=0.0)
+    br = b.get("bracket")
+    if br:
+        a = np.asarray(br["from"], float)
+        top = centre + R @ np.array([br.get("at_x", 0.0), -hgt / 2, 0.0])
+        v = top - a
+        L = float(np.linalg.norm(v))
+        zax = v / L
+        ref = R[:, 2] if abs(np.dot(R[:, 2], zax)) < 0.9 else R[:, 0]   # bracket plate faces the optical axis
+        xax = np.cross(ref, zax)
+        xax /= np.linalg.norm(xax)
+        Rb = np.stack([xax, np.cross(zax, xax), zax], axis=1)
+        parent.add_geom(name=f"{name}_bracket", type=mujoco.mjtGeom.mjGEOM_BOX,
+                        size=[br.get("width", 0.020) / 2, br.get("thickness", 0.004) / 2, L / 2],
+                        pos=(a + v / 2).tolist(), quat=_quat_from_mat(Rb).tolist(),
+                        material=f"{name}_bracket_mat", mass=b.get("bracket_mass", 0.02))
 
 
 def build_scene(cfg, n_particles=None):

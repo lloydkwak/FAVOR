@@ -5,14 +5,14 @@
  "solver": "mjSOL_CG",
  "iterations": 20,
  "nv": 2533,
- "reset_wall_s": 3.4155585765838623,
+ "reset_wall_s": 3.455388069152832,
  "fill_height_mm_spawn": 37.20080000000001,
  "a_hold_s": 10.0,
  "a_max_particles_outside_cup": 0,
  "a_fill_height_mm_settled": 29.935562812698418,
  "a_cup_depth_mm": 50.0,
  "a_max_particle_speed_end": 0.0007184531795578679,
- "c_rtf_physics_hold": 0.19085970673669325,
+ "c_rtf_physics_hold": 0.2026134839248819,
  "b_steps": 144,
  "b_metrics": {
   "f": 1.0,
@@ -30,9 +30,9 @@
   "safety_joint_limit": 0,
   "safety_first": null
  },
- "c_rtf_physics_pour": 0.34963104614159585,
- "c_render_ms_per_step": 232.10375308990479,
- "c_rtf_with_render": 0.19300565142218365,
- "c_wall_per_demo_s": 80.32953006558948,
- "c_demos_per_core_hour": 44.81539972984507
+ "c_rtf_physics_pour": 0.3450799290153674,
+ "c_render_ms_per_step": 204.14973497390747,
+ "c_rtf_with_render": 0.20245469439159247,
+ "c_wall_per_demo_s": 76.92278315756056,
+ "c_demos_per_core_hour": 46.80017872762271
 }

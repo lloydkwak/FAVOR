@@ -4,11 +4,12 @@ Each episode: reset (bowl at a grid cell or uniform sample, seed) -> scripted pl
 commanded joint targets executed through the command layer -> weigh after settle_after.
 Per episode an .npz is written with, per policy step t (observation BEFORE action t):
   actions (T,7) commanded joint targets, robot0_eef_pos (T,3), robot0_eef_quat (T,4, xyzw),
-  robot0_joint_pos (T,7), optionally states (T, nq) float32 for offline rendering (--save-states)
+  robot0_joint_pos (T,7), states (T, nq) float32 for offline image rendering by m5_export.py
+  (on by default; --no-states only for timing runs: such episodes cannot be exported)
   and images (--images), plus the plan parameters and the metrics.
 A summary.csv row per episode is appended; scripts/m4_report.py builds the per-cell table.
 
-  python scripts/m4_generate.py --out out/m4 --reps 10 --workers 8 --save-states
+  OMP_NUM_THREADS=1 python scripts/m4_generate.py --out out/m4 --reps 10 --workers 10
 """
 import argparse
 import csv
@@ -81,7 +82,8 @@ def main():
     ap.add_argument("--cells", type=str, default=None, help="comma-separated grid indices (default all)")
     ap.add_argument("--base-seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=1)
-    ap.add_argument("--save-states", action="store_true")
+    ap.add_argument("--no-states", action="store_true", help="do not save MuJoCo states (episodes then cannot be exported)")
+    ap.add_argument("--save-states", action="store_true", help=argparse.SUPPRESS)   # kept for old commands; now the default
     ap.add_argument("--images", action="store_true", help="render the policy images online")
     args = ap.parse_args()
     cfg = from_args(args)
@@ -96,14 +98,14 @@ def main():
         for rep in range(args.reps):
             for gi in cells:
                 seed = args.base_seed + 1000 * gi + rep
-                jobs.append((cfg, ep, gi, rep, seed, None, out, args.save_states, args.images))
+                jobs.append((cfg, ep, gi, rep, seed, None, out, not args.no_states, args.images))
                 ep += 1
     else:
         rng = np.random.default_rng(args.base_seed)
         s, c = cfg["task"]["grid_size"], np.array(cfg["task"]["grid_center"])
         for ep in range(args.n):
             xy = c + rng.uniform(-s / 2, s / 2, size=2)
-            jobs.append((cfg, ep, None, ep, args.base_seed + ep, xy, out, args.save_states, args.images))
+            jobs.append((cfg, ep, None, ep, args.base_seed + ep, xy, out, not args.no_states, args.images))
     done = set()
     summ = os.path.join(out, "summary.csv")
     if os.path.exists(summ):

@@ -4,6 +4,7 @@
   python scripts/view.py --cells 0,24 --speed 0.5
   python scripts/view.py --idle                  # robot holds home, beads settle; inspect the scene
   python scripts/view.py --fault-joint 6         # locked J6 (no correction) to see the effect
+  python scripts/view.py --camera eye_in_hand    # look through the wrist camera (or agentview)
 
 Viewer: drag to rotate / right-drag to pan / scroll to zoom; '[' and ']' cycle the scene cameras
 (agentview = side camera, eye_in_hand = wrist camera), Esc returns to the free camera.
@@ -69,6 +70,8 @@ def main():
     ap.add_argument("--idle", action="store_true", help="no motion, just hold home")
     ap.add_argument("--once", action="store_true", help="play each cell once, then keep the window open")
     ap.add_argument("--fault-joint", type=int, default=None, help="1..7, locked at home (no correction)")
+    ap.add_argument("--camera", choices=["free", "agentview", "eye_in_hand"], default="free",
+                    help="start looking through a scene camera ('[' / ']' switch, Esc = free camera)")
     ap.add_argument("--headless-steps", type=int, default=None, help=argparse.SUPPRESS)  # self-test without a display
     args = ap.parse_args()
     cfg = from_args(args)
@@ -92,6 +95,9 @@ def main():
     with mujoco.viewer.launch_passive(env.m, env.d) as v:
         v.cam.lookat[:] = [cfg["task"]["grid_center"][0] - 0.05, cfg["task"]["grid_center"][1], 0.15]
         v.cam.distance, v.cam.azimuth, v.cam.elevation = 1.3, -150.0, -25.0
+        if args.camera != "free":
+            v.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
+            v.cam.fixedcamid = env.h.cameras[args.camera]
         env.fault = ViewerSync(v, args.speed, inner=fault)
         k = 0
         while v.is_running():

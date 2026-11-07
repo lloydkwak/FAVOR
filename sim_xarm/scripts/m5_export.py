@@ -49,6 +49,9 @@ def _render_episode(args):
     imgs = {"agentview_image": [], "robot0_eye_in_hand_image": []}
     if "agentview_image" in z.files:
         return path, {k: z[k] for k in imgs}
+    if "states" not in z.files:
+        raise SystemExit(f"{os.path.basename(path)} has neither images nor states: it was generated with "
+                         "--no-states and cannot be exported. Re-generate it without --no-states.")
     for s in z["states"]:
         env.d.qpos[:] = s
         env.d.qvel[:] = 0
@@ -81,6 +84,11 @@ def main():
     if args.n is not None:
         keep = keep[:args.n]
     print(f"{len(files)} episodes, {len(keep)} kept ({args.filter})", flush=True)
+    if not keep:
+        raise SystemExit("no episodes to export")
+    z0 = np.load(keep[0])
+    if "states" not in z0.files and "agentview_image" not in z0.files:
+        raise SystemExit("episodes have neither images nor states (generated with --no-states); re-generate them")
     jobs = [(p, cfg, args.render_size) for p in keep]
     t0 = time.time()
     if args.workers > 1:

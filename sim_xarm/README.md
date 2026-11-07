@@ -67,8 +67,14 @@ earlier hanging-cup layout (yaw −120°); re-run them for the current layout (R
   ≥ ~65 mm above the rim, pour direction 0° (away from the robot) is collision-free everywhere with
   ≥ 0.5 rad margin on J2/J4/J6 (`task.scripted.lip_height: [0.065, 0.085]`).
   Home: `[0.7423, 0.3094, −0.1474, 1.0617, −1.0825, 1.9405, 2.4654]` (cup mouth (0.40, 0, 0.30) m, lip +x).
-- **Wrist camera**: above the gripper housing, in front of it, looking down past the cup towards
-  the lip side (cup mouth, bowl and bead stream in view).
+- **Cameras = RealSense D435** (both), colour 640 × 480, vertical FOV 42°. The wrist D435 is modelled
+  as in the lab photo (2026-11-07): 90 × 25 × 25 mm housing on a 12 mm bracket on the gripper
+  housing top near the flange, long side along the finger axis, looking straight forward; it is a
+  collision body and appears in the side camera's images. Looking forward, the wrist image shows
+  mostly the cup rim and background and the bowl only during the pour; tilting it down does not
+  show the cup interior (the camera is only ~36 mm above the cup mouth). Tilt is one config value.
+- **Demo states are saved by default** (`m4_generate.py --no-states` only for timing runs): the
+  exporter renders the policy images from them and refuses episodes without them.
 - **Physics**: CG solver, 20 iterations, 2 ms (Newton: ~700 ms per step with ~2,500 bead DoFs;
   10 CG iterations let beads through the walls). Cup and bowl have invisible collision shells 8 mm
   thicker than the visual walls (beads tunnelled through 3–4 mm walls).
@@ -104,13 +110,13 @@ compensation. Force limits not checked against rated torques (**TODO(real)**). F
 ## Running the milestones (one line each, from `sim_xarm/`)
 
 ```bash
-python scripts/view.py                                        # interactive viewer, scripted pours (needs a display)
+python scripts/view.py [--camera eye_in_hand]                  # interactive viewer, scripted pours (needs a display)
 python scripts/m0_inspect_model.py
 python scripts/solve_home.py                                   # prints home_q for config
 python scripts/m1_scene_check.py                               # reports/m1_scene.md numbers
 python scripts/m2_step_response.py                             # reports/m2_step_response.png
 python scripts/m3_fk_check.py && python tests/test_ik_xarm.py && python tests/test_panda_ik_unchanged.py
-python scripts/m4_generate.py --out out/m4 --reps 10 --workers 16 --save-states
+OMP_NUM_THREADS=1 python scripts/m4_generate.py --out out/m4 --reps 10 --workers 10   # 10 = physical cores
 python scripts/m4_report.py --run out/m4
 python scripts/m5_export.py --run out/m4 --out out/xarm_pour_200.hdf5 --n 200 --filter success --workers 16
 DIFFUSION_POLICY_ROOT=../diffusion_policy python tests/test_dp_dataset.py out/xarm_pour_200.hdf5
