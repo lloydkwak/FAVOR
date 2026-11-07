@@ -6,7 +6,8 @@ real-robot fault layer (FAVOR_real_robot_experiment_design.md section 4.1):
            qpos is reset to q_lock and its velocity to zero (simulator enforcement, as in LIBERO,
            where it was done after every 20 Hz control step).
   range  : the joint's MuJoCo limit (jnt_range) is narrowed to [lo, hi]; the command layer clips the
-           target into the window (real-robot software range + reduced-mode joint range).
+           target into the window (real-robot software range + reduced-mode joint range), and after
+           every tick a joint outside the window is put back on its edge with zero velocity (hard stop).
 Onset: None = active from reset() (lock angle / window centre = the joint's angle at home, which
 is fixed, so the lock angle is the same in every trial), or 'tilt20+0.5' = the joint runs healthy
 until the cup tilt computed by FK first exceeds 20 deg, then locks 0.5 s later at the angle it has
@@ -88,6 +89,15 @@ class FaultLayer:
             env.d.qvel[self.dadr] = 0.0
             env.ctl.q_cmd[self.j] = self.q_lock
             mujoco.mj_forward(env.m, env.d)
+        else:
+            # The narrowed MuJoCo limit is soft: a servo driving into it penetrates by ~0.1 deg.
+            # Make it a hard stop (as the real controller's reduced-mode range would stop the joint).
+            env.ctl.q_cmd[self.j] = min(max(env.ctl.q_cmd[self.j], self.lo), self.hi)
+            q = env.d.qpos[self.qadr]
+            if q < self.lo or q > self.hi:
+                env.d.qpos[self.qadr] = min(max(q, self.lo), self.hi)
+                env.d.qvel[self.dadr] = 0.0
+                mujoco.mj_forward(env.m, env.d)
 
     # ---------------------------------------------------------------- method interface
     def get_fault_info(self):

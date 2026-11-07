@@ -1,10 +1,10 @@
 {
  "cup_mouth": {
   "n": 100,
-  "pos_err_mm_max": 0.005481978013935297,
-  "pos_err_mm_mean": 0.002110048172908459,
-  "rot_err_deg_max": 0.03802027187238371,
-  "rot_err_deg_mean": 0.012567101725135216,
+  "pos_err_mm_max": 0.005577316698623656,
+  "pos_err_mm_mean": 0.0021458909280707276,
+  "rot_err_deg_max": 0.038644720997372844,
+  "rot_err_deg_mean": 0.012857626230068094,
   "jac_abs_err_max": 1.3480517676488224e-05,
   "passed": true
  },
@@ -19,10 +19,10 @@
  },
  "cup_lip": {
   "n": 100,
-  "pos_err_mm_max": 0.005507366695525544,
-  "pos_err_mm_mean": 0.002144977282359945,
-  "rot_err_deg_max": 0.03802027187238371,
-  "rot_err_deg_mean": 0.012567101725135216,
+  "pos_err_mm_max": 0.005576783572177638,
+  "pos_err_mm_mean": 0.002156018161094291,
+  "rot_err_deg_max": 0.038644720997372844,
+  "rot_err_deg_mean": 0.012857626230068094,
   "jac_abs_err_max": 1.3480517676488224e-05,
   "passed": true
  }

@@ -27,30 +27,34 @@ robot:
     - [-97.0, 180.0]
     - [-360.0, 360.0]
   max_joint_speed_deg: 180.0         # official maximum; reduce for safety studies
-  # Fixed start pose (cup upright, gripper pointing forward). Solved once by
+  # Fixed start pose (cup upright). Solved once by
   # scripts/solve_home.py for task.home_cup_pos and frozen here (rad).
-  home_q: [0.2517, -0.1347, -0.1080, 1.1221, -0.0152, 1.2560, -0.8979]
+  home_q: [0.7423, 0.3094, -0.1474, 1.0617, -1.0825, 1.9405, 2.4654]
   gripper:
     type: xarm_gripper               # xarm_gripper | robotiq_2f85   TODO(real): confirm gripper
-    closed_ctrl: 200.0               # xarm_gripper actuator command that holds the cup handle (0..255)
+    # Finger command that holds the cup. 'auto' (mount: grip, xarm_gripper): computed from the cup
+    # diameter so the pads touch the cup wall (scene.grip_command). A number overrides it (0..255).
+    closed_ctrl: auto
 
 cup:
   # The cup is rigidly attached to the gripper base link (no grasp physics); fingers stay closed.
-  # hang: gripper points down and pinches a vertical handle plate on the cup side (cup axis parallel
-  #       to the approach axis). side: gripper points forward, cup axis perpendicular to it.
-  mount: hang                        # TODO(real): confirm how the cup is held
-  mouth_above_grip: 0.015            # hang: cup mouth this far above the grip point (towards the flange)
+  # grip: the fingers pinch the cup body from the side (no handle); the gripper approach axis is
+  #       horizontal while the cup is upright.
+  # hang / side: older layouts with a handle plate (cup.handle), kept as options.
+  mount: grip                        # TODO(real): confirm how the cup is held
+  grip_height: 0.025                 # grip: pad centre above the cup's inner bottom (m)  TODO(real)
+  lip_yaw_deg: 90.0                  # grip: lip around the cup axis; 0 = far side from the palm, 90 = +y finger side (roll pour)
   inner_radius: 0.031                # TODO(real): measure  (inner diameter 62 mm)
   inner_depth: 0.050                 # TODO(real): measure  (~151 ml)
   wall: 0.003
   bottom: 0.004
   n_wall_segments: 24
-  mass: 0.060                        # empty cup + handle, kg  TODO(real): measure
-  # Handle plate: length = radial reach from the cup wall, width = thickness between the fingers.
-  handle: {length: 0.050, width: 0.020, height: 0.030}   # TODO(real): measure
-  # Handle grip point along the gripper approach axis (gripper base frame, m from the flange).
-  grip_z: 0.150
+  mass: 0.050                        # empty cup, kg  TODO(real): measure
   rgba: [0.85, 0.85, 0.80, 1.0]
+  # Only for mount: hang / side.
+  mouth_above_grip: 0.015
+  handle: {length: 0.050, width: 0.020, height: 0.030}
+  grip_z: 0.150
 
 bowl:
   inner_radius: 0.060                # TODO(real): measure (inner diameter 120 mm)
@@ -58,8 +62,10 @@ bowl:
   wall: 0.003
   bottom: 0.004
   n_wall_segments: 32
-  scale_height: 0.030                # scale platform under the bowl  TODO(real): measure
-  scale_size: [0.10, 0.10]           # half extents of the scale top  TODO(real): measure
+  # The bowl stands on the table. A scale plate under it can be added with scale_height > 0
+  # (the simulated "scale" is the settled bead mass inside the bowl either way).
+  scale_height: 0.0
+  scale_size: [0.10, 0.10]           # half extents of the optional scale plate
   rgba: [0.20, 0.45, 0.80, 1.0]
 
 table:
@@ -130,9 +136,10 @@ cameras:
     intrinsics: {width: 640, height: 480, fovy_deg: 42.0}   # TODO(real): calibrate
   eye_in_hand:                       # wrist camera (RealSense D405 class), on the gripper base
     parent: gripper
-    # In the gripper base frame (z = approach axis, cup on +x). Mounted on the gripper body on the
-    # side opposite the cup, looking past the fingers at the cup mouth and the bowl below.
-    extrinsics: {type: lookat, pos: [-0.085, 0.0, 0.070], target: [0.070, 0.0, 0.25], up: [0, 0, -1]}  # TODO(real): calibrate
+    # In the gripper base frame (z = approach axis, -x = up while the cup is upright, cup lip on +y).
+    # Above the gripper housing, in front of it, looking down past the cup towards the lip side so
+    # the cup mouth, the bowl and the bead stream are all in view.
+    extrinsics: {type: lookat, pos: [-0.13, 0.0, 0.09], target: [0.08, 0.08, 0.22], up: [-1, 0, 0]}  # TODO(real): calibrate
     intrinsics: {width: 640, height: 480, fovy_deg: 58.0}   # TODO(real): calibrate
   policy_size: 84                    # images handed to the policy are resized to this (square)
   render_size: [240, 320]            # (H, W) rendered before resizing (same aspect as the intrinsics;
@@ -150,7 +157,15 @@ task:
   grid_n: 5
   placement: grid                    # grid | uniform
   home_cup_pos: [0.40, 0.0, 0.30]    # cup-mouth centre at home (world), cup upright
-  home_cup_yaw_deg: -120.0           # pouring lip direction at home (about world z, 0 = +x)
+  home_cup_yaw_deg: 0.0              # pouring lip direction at home (about world z, 0 = +x)
+  # Scripted demonstrations (favor_xarm/scripted.py DEFAULT_PARAMS; [lo, hi] = uniform range).
+  # Side grip + roll pour (cup.lip_yaw_deg 90): a sweep over pour directions and lip sides found
+  # yaw 0 (pour away from the robot) clear of the bowl, table and self-collision at every grid
+  # corner with >= 0.6 rad joint margin, but only with the lip >= ~65 mm above the rim (lower, the
+  # gripper body crosses the rim). See README "Scene decisions".
+  scripted:
+    yaw_deg: [-10.0, 10.0]
+    lip_height: [0.065, 0.085]
   max_time: 30.0
   max_steps: 300
   success_fraction: 0.8              # f >= 0.8 and no safety violation

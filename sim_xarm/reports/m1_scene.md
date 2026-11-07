@@ -1,5 +1,20 @@
 # M1: scene checks
 
+## Current layout: side grip, no handle, bowl on the table, roll pour (2026-11-07)
+
+`scripts/m1_scene_check.py` on the current config (raw: `reports/m1/m1_results.json`, images in `reports/m1/`):
+
+| check | result |
+|---|---|
+| (a) upright at home for 10 s | **0 / 420** beads outside the cup; settled fill height 29.9 mm of 50 mm |
+| (b) scripted pour at the grid centre | f = **1.000**, spill 0.0 g, contact-force cross-check 50.0 g, max tilt 123.7°, no safety flag, no robot-bowl contact |
+| (c) real-time factor | physics 0.35 (pour) / 0.19 (still) on the 2-core validation machine with a second job running |
+| 25 cells × 2 scripted demos | **50 / 50** success, mean f 1.000 (min 0.993), max spill 0.36 g, 12.6–14.4 s (`reports/m4_demos_grip.md`) |
+| 25 cells × 4 plans, kinematic check | IK error ≤ 0.01 mm, J2/J4/J6 margin ≥ 0.51 rad, 0 table / self / bowl contacts |
+
+Everything below is the earlier hanging-cup layout (kept for the record).
+
+
 Produced by `scripts/m1_scene_check.py` (raw numbers: `reports/m1/m1_results.json`) and
 `scripts/m1_rtf_sweep.py` (`reports/m1_rtf_sweep.jsonl`). Machine: 2 CPU cores, no GPU, OSMesa
 software rendering. Default scene: 420 beads of 6 mm (0.119 g each, 50.0 g), cup 62 mm × 50 mm,

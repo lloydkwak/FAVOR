@@ -1,5 +1,5 @@
 """Builds the pouring scene with MjSpec: table, xArm7 (+ gripper) on the table, cup rigidly
-attached to the gripper, bowl on a scale, spherical beads, side + wrist cameras.
+attached to the gripper, bowl on the table (optional scale plate), spherical beads, side + wrist cameras.
 
 All dimensions come from the config tree (config/default.yaml). The compiled model and a few
 name/id maps are returned in a SceneHandles object.
@@ -19,9 +19,36 @@ ARM_ACTS = [f"act{i}" for i in range(1, 8)]
 # Per-gripper layout: body the cup and the wrist camera attach to, the TCP site of the gripper
 # and the grip point of the cup handle along that body's z (approach) axis. Fingers close along y.
 GRIPPERS = {
-    "xarm_gripper": dict(body="xarm_gripper_base_link", tcp_site="link_tcp", grip_z=0.150, actuator="gripper"),
+    "xarm_gripper": dict(body="xarm_gripper_base_link", tcp_site="link_tcp", grip_z=0.150, actuator="gripper",
+                         # Measured on the Menagerie model (finger pads, gripper base frame): actuator command ->
+                         # pad centre |y| and pad centre z (mean of the two pads). Pads are 4 mm thick.
+                         pad_table=dict(ctrl=[0, 50, 100, 150, 200, 255],
+                                        y=[0.0464, 0.0399, 0.0318, 0.0230, 0.0139, 0.0037],
+                                        z=[0.1422, 0.1467, 0.1509, 0.1536, 0.1549, 0.1545]),
+                         pad_half_thickness=0.002),
     "robotiq_2f85": dict(body="rq_base", tcp_site="rq_pinch", grip_z=0.135, actuator="rq_fingers_actuator"),
 }
+
+
+def grip_command(cfg):
+    """(gripper actuator command, pad-centre z in the gripper frame) for mount 'grip': the pads touch
+    the cup's outer wall. Explicit robot.gripper.closed_ctrl (a number) overrides the command."""
+    g = cfg["robot"]["gripper"]
+    info = GRIPPERS[g["type"]]
+    r_out = cfg["cup"]["inner_radius"] + cfg["cup"]["wall"]
+    tab = info.get("pad_table")
+    if tab is None:
+        if not isinstance(g.get("closed_ctrl"), (int, float)):
+            raise ValueError(f"set robot.gripper.closed_ctrl and cup.grip_z for {g['type']}")
+        return float(g["closed_ctrl"]), float(cfg["cup"].get("grip_z", info["grip_z"]))
+    y_pad = r_out + info["pad_half_thickness"]
+    if y_pad > tab["y"][0]:
+        raise ValueError(f"cup outer diameter {2 * r_out * 1000:.0f} mm exceeds the gripper opening")
+    ctrl = float(np.interp(-y_pad, [-v for v in tab["y"]], tab["ctrl"]))
+    if isinstance(g.get("closed_ctrl"), (int, float)):
+        ctrl = float(g["closed_ctrl"])
+    z = float(np.interp(ctrl, tab["ctrl"], tab["z"]))
+    return ctrl, z
 
 # contype / conaffinity bits: 1 = default (robot, table, cup, bowl), 2 = particles.
 PARTICLE_CONTYPE, PARTICLE_CONAFF = 2, 3
@@ -36,6 +63,7 @@ class SceneHandles:
     arm_dof: np.ndarray = None        # dof addresses
     arm_act: np.ndarray = None        # actuator ids
     gripper_act: int = -1
+    gripper_ctrl: float = 0.0       # finger command that holds the cup
     particle_qpos: np.ndarray = None  # (N,) start qpos address of each particle free joint
     particle_dof: np.ndarray = None
     particle_body: np.ndarray = None
@@ -129,42 +157,54 @@ def _add_table(spec, cfg):
 
 
 def _add_bowl(spec, cfg):
+    """Bowl on the table top, or on a scale plate when bowl.scale_height > 0. The body 'bowl_base'
+    (static) is what reset() moves to the sampled bowl position."""
     b = cfg["bowl"]
-    sc = spec.worldbody.add_body(name="scale", pos=[cfg["task"]["grid_center"][0], cfg["task"]["grid_center"][1], 0])
-    sc.add_geom(name="scale_top", type=mujoco.mjtGeom.mjGEOM_BOX,
-                size=[b["scale_size"][0], b["scale_size"][1], b["scale_height"] / 2],
-                pos=[0, 0, b["scale_height"] / 2], rgba=[0.15, 0.15, 0.15, 1])
-    bowl = sc.add_body(name="bowl", pos=[0, 0, b["scale_height"]])
+    sh = float(b.get("scale_height", 0.0))
+    sc = spec.worldbody.add_body(name="bowl_base", pos=[cfg["task"]["grid_center"][0], cfg["task"]["grid_center"][1], 0])
+    if sh > 0:
+        sc.add_geom(name="scale_top", type=mujoco.mjtGeom.mjGEOM_BOX,
+                    size=[b["scale_size"][0], b["scale_size"][1], sh / 2],
+                    pos=[0, 0, sh / 2], rgba=[0.15, 0.15, 0.15, 1])
+    bowl = sc.add_body(name="bowl", pos=[0, 0, sh])
     spec.add_material(name="bowl_mat", rgba=b["rgba"])
     bowl.add_geom(name="bowl_bottom", type=mujoco.mjtGeom.mjGEOM_CYLINDER,
                   size=[b["inner_radius"] + b["wall"], b["bottom"] / 2, 0], pos=[0, 0, b["bottom"] / 2], material="bowl_mat",
                   **VIS)
     _ring(bowl, "bowl", b["inner_radius"], b["wall"], 0.0, b["depth"] + b["bottom"], b["n_wall_segments"], b["rgba"], **VIS)
-    # The collision bottom may extend into the scale plate (both static: no contact between them).
+    # The collision bottom extends into the table / scale plate (all static: no contact between them).
     _collision_shell(bowl, "bowl", b["inner_radius"], b["wall"], b["bottom"], b["bottom"], b["depth"],
                      b["n_wall_segments"], cfg["physics"].get("collision_shell_extra", 0.008))
     bowl.add_site(name="bowl_inner_bottom", pos=[0, 0, b["bottom"]], size=[0.003, 0, 0], rgba=[1, 0, 0, 1], group=4)
 
 
 def _add_cup(spec, cfg, gripper_body, grip_z):
-    """Cup frame: origin = inner bottom centre, z = cup axis (up when upright), x = from the handle
-    towards the cup centre (the pouring lip is on +x), y completes the frame.
+    """Cup frame: origin = inner bottom centre, z = cup axis (up when upright), x = towards the
+    pouring lip, y completes the frame.
 
-    mount = hang (default): gripper approach axis (gz) points down, the fingers pinch a vertical
-        handle plate on the cup side; cup axis anti-parallel to gz.  R_g_cup = [gx, -gy, -gz].
-    mount = side: gripper approach horizontal, cup axis perpendicular to gz, handle block on the
-        cup side facing the flange.  R_g_cup = [gz, gy, -gx]."""
+    mount = grip (default): the fingers pinch the cup body from the side, no handle. Gripper
+        approach axis (gz) horizontal when the cup is upright, cup axis = -gx, cup centre on the
+        approach axis at the pad centre (grip_z, from grip_command), pads at cup.grip_height above
+        the inner bottom. cup.lip_yaw_deg places the lip around the cup axis: 0 = far side from the
+        palm (+gz), 90 = towards the +gy finger.
+    mount = hang: gripper points down, the fingers pinch a vertical handle plate on the cup side.
+    mount = side: gripper approach horizontal, handle block on the cup side facing the flange."""
     c = cfg["cup"]
     gb = spec.body(gripper_body)
-    hl = c["handle"]
+    hl = c.get("handle", {"length": 0.05, "width": 0.02, "height": 0.03})
     r_out = c["inner_radius"] + c["wall"]
     total_h = c["inner_depth"] + c["bottom"]
-    mount = c.get("mount", "hang")
-    # The handle extends hl.length from the cup wall; 15 mm of it lies behind the grip point.
+    mount = c.get("mount", "grip")
     handle_reach = hl["length"] - 0.015
-    if mount == "hang":
+    handle_size = None
+    if mount == "grip":
+        a = math.radians(c.get("lip_yaw_deg", 0.0))
+        xc = np.array([0.0, math.sin(a), math.cos(a)])        # lip direction in the gripper frame
+        zc = np.array([-1.0, 0.0, 0.0])                       # cup axis
+        R = np.stack([xc, np.cross(zc, xc), zc], axis=1)
+        pos = [c.get("grip_height", 0.025), 0.0, grip_z]
+    elif mount == "hang":
         R = np.diag([1.0, -1.0, -1.0])
-        # Mouth sits mouth_above_grip above the grip point (towards the flange); bottom further down.
         mouth_gz = grip_z - c.get("mouth_above_grip", 0.015)
         pos = [handle_reach + r_out, 0.0, mouth_gz + c["inner_depth"]]   # inner-bottom centre in gripper frame
         handle_pos = [-(r_out + hl["length"] / 2), 0, c["inner_depth"] - hl["height"] / 2]
@@ -182,13 +222,14 @@ def _add_cup(spec, cfg, gripper_body, grip_z):
     n = c["n_wall_segments"]
     half_w = (c["inner_radius"] + c["wall"]) * math.tan(math.pi / n) * 1.02
     vols = {"bottom": math.pi * r_out ** 2 * c["bottom"], "wall": c["wall"] * 2 * half_w * total_h,
-            "handle": 8 * handle_size[0] * handle_size[1] * handle_size[2]}
+            "handle": 0.0 if handle_size is None else 8 * handle_size[0] * handle_size[1] * handle_size[2]}
     rho = c["mass"] / (vols["bottom"] + n * vols["wall"] + vols["handle"])
     cup.add_geom(name="cup_bottom", type=mujoco.mjtGeom.mjGEOM_CYLINDER, size=[r_out, c["bottom"] / 2, 0],
                  pos=[0, 0, -c["bottom"] / 2], material="cup_mat", mass=rho * vols["bottom"], **VIS)
     _ring(cup, "cup", c["inner_radius"], c["wall"], -c["bottom"], total_h, n, c["rgba"], mass=rho * vols["wall"], **VIS)
-    cup.add_geom(name="cup_handle", type=mujoco.mjtGeom.mjGEOM_BOX, size=handle_size, pos=handle_pos,
-                 material="cup_mat", mass=rho * vols["handle"])
+    if handle_size is not None:
+        cup.add_geom(name="cup_handle", type=mujoco.mjtGeom.mjGEOM_BOX, size=handle_size, pos=handle_pos,
+                     material="cup_mat", mass=rho * vols["handle"])
     _collision_shell(cup, "cup", c["inner_radius"], c["wall"], c["bottom"], 0.0, c["inner_depth"], n,
                      cfg["physics"].get("collision_shell_extra", 0.008))
     cup.add_site(name="cup_mouth", pos=[0, 0, c["inner_depth"]], size=[0.003, 0, 0], rgba=[0, 1, 0, 1], group=4)
@@ -310,7 +351,10 @@ def build_scene(cfg, n_particles=None):
     from .randomization import add_table_textures
     add_table_textures(spec)                 # unused unless randomization.enabled
     _add_bowl(spec, cfg)
-    grip_z = cfg["cup"].get("grip_z", ginfo["grip_z"])
+    if cfg["cup"].get("mount", "grip") == "grip":
+        grip_ctrl, grip_z = grip_command(cfg)
+    else:
+        grip_ctrl, grip_z = float(cfg["robot"]["gripper"].get("closed_ctrl", 200.0)), cfg["cup"].get("grip_z", ginfo["grip_z"])
     _add_cup(spec, cfg, ginfo["body"], grip_z)
     n, m_p = _add_particles(spec, cfg)
     _add_cameras(spec, cfg, ginfo["body"])
@@ -336,6 +380,7 @@ def build_scene(cfg, n_particles=None):
 
     model = spec.compile()
     h = SceneHandles(model=model, spec=spec, cfg=cfg)
+    h.gripper_ctrl = grip_ctrl
     jid = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, jn) for jn in ARM_JOINTS]
     h.arm_qpos = np.array([model.jnt_qposadr[j] for j in jid])
     h.arm_dof = np.array([model.jnt_dofadr[j] for j in jid])
@@ -350,7 +395,7 @@ def build_scene(cfg, n_particles=None):
     for s in ("cup_mouth", "cup_inner_bottom", "cup_lip", "bowl_inner_bottom", "gripper_frame", ginfo["tcp_site"]):
         h.sites[s] = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, s)
     h.sites["gripper_tcp"] = h.sites[ginfo["tcp_site"]]
-    for b in ("cup", "bowl", "scale", "table", "link_base", ginfo["body"]):
+    for b in ("cup", "bowl", "bowl_base", "table", "link_base", ginfo["body"]):
         h.bodies[b] = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, b)
     h.bodies["gripper"] = h.bodies[ginfo["body"]]
     for c in ("agentview", "eye_in_hand"):
@@ -372,7 +417,8 @@ def build_scene(cfg, n_particles=None):
     h.geom_groups["robot"] = np.array([g for g in robot_all if g not in set(cup_g)], dtype=int)
     h.geom_groups["cup"] = cup_g
     h.geom_groups["bowl"] = subtree_geoms(h.bodies["bowl"])
-    h.geom_groups["scale"] = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "scale_top")])
+    sg = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "scale_top")
+    h.geom_groups["scale"] = np.array([sg] if sg >= 0 else [], dtype=int)
     h.geom_groups["table"] = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "table_top"),
                                        mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")])
     h.geom_groups["particles"] = h.particle_geom

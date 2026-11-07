@@ -32,7 +32,7 @@ def run(cfg, h, j, step, mode):
     d.qpos[h.arm_qpos] = q0
     d.ctrl[h.arm_act] = q0
     if h.gripper_act >= 0:
-        d.ctrl[h.gripper_act] = cfg["robot"]["gripper"]["closed_ctrl"]
+        d.ctrl[h.gripper_act] = h.gripper_ctrl
     mujoco.mj_forward(m, d)
     c = copy.deepcopy(cfg)
     if mode in ("servo", "online"):

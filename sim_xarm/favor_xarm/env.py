@@ -2,7 +2,7 @@
 absolute joint targets (7-D). The fault layer (faults.py) sits in front of step().
 
 Scale: the bowl reading is the mass of particles that have settled inside the bowl's inner
-volume; cross-checked by the vertical contact force the particles exert on the bowl and the scale.
+volume; cross-checked by the vertical contact force the particles exert on the bowl (and scale plate, if any).
 """
 import math
 
@@ -78,7 +78,7 @@ class PourEnv:
 
     # ------------------------------------------------------------------ reset
     def set_bowl_xy(self, xy):
-        self.m.body_pos[self.h.bodies["scale"], :2] = xy
+        self.m.body_pos[self.h.bodies["bowl_base"], :2] = xy
 
     def bowl_xy_for(self, rng, grid_index=None):
         t = self.cfg["task"]
@@ -133,7 +133,7 @@ class PourEnv:
         self.bowl_xy = xy
         self._set_arm(self.home_q)
         if self.h.gripper_act >= 0:
-            self.d.ctrl[self.h.gripper_act] = self.cfg["robot"]["gripper"]["closed_ctrl"]
+            self.d.ctrl[self.h.gripper_act] = self.h.gripper_ctrl
         if self.randomizer is not None:
             self.dr_sample = self.randomizer.sample(np.random.default_rng([seed, 77]))
             self._bead_diameter_mm = self.dr_sample["bead_diameter_mm"]

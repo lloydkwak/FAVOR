@@ -1,7 +1,7 @@
 # sim_xarm — xArm7 pouring simulation for FAVOR
 
 MuJoCo environment for the real-robot pouring task (`claude/FAVOR_real_robot_experiment_design.md`):
-xArm7 with a cup fixed in the closed gripper, 50.0 g of spherical beads, a 12 cm bowl on a scale,
+xArm7 holding a cup by its side in the closed gripper, 50.0 g of spherical beads, a 12 cm bowl,
 two cameras (fixed side + wrist), 10 Hz absolute joint targets (7-D action, no gripper command).
 Uses: simulation data for the real policy (zero-shot / co-training), xArm7 fault experiments in
 simulation, and offline safety checks of corrected trajectories before real runs.
@@ -37,8 +37,8 @@ All randomness is seeded: episode seed -> bowl cell / beads jitter, `seed + 7` -
 | path | content |
 |---|---|
 | `config/default.yaml` | **the one config tree**: scene dimensions, cameras, control, beads, task, randomisation. Every placeholder is marked `TODO(real): measure`. Override with `--config real.yaml` or `--set a.b=v` |
-| `favor_xarm/scene.py` | MjSpec scene: table, xArm7 (+ xArm gripper or Robotiq 2F-85), cup (rigidly on the gripper), bowl on a scale, beads, cameras |
-| `favor_xarm/env.py` | `PourEnv`: reset / 10 Hz `step(q_target)` / metrics (f, spill, cup residue, contact-force scale check) / safety flags / observations |
+| `favor_xarm/scene.py` | MjSpec scene: table, xArm7 (+ xArm gripper or Robotiq 2F-85), cup (rigidly in the gripper), bowl, beads, cameras |
+| `favor_xarm/env.py` | `PourEnv`: reset / 10 Hz `step(q_target)` / metrics (f, spill, cup residue, contact-force cross-check) / safety flags / observations |
 | `favor_xarm/control.py` | command layer: Mode 1 (servo stream) and Mode 6 (online re-plan) emulation, speed limit, latency, velocity feedforward |
 | `favor_xarm/kinematics.py` | `XArm7Kinematics`, same interface as `PandaKinematics`, plus `q_lo/q_hi` |
 | `favor_xarm/scripted.py` | scripted pouring planner |
@@ -51,12 +51,24 @@ All randomness is seeded: episode seed -> bowl cell / beads jitter, `seed + 7` -
 
 ## Scene decisions that differ from a first guess
 
-- **Cup mount `hang` (default)**: the gripper points down and pinches a vertical handle plate on the
-  cup side; the cup hangs beside the fingers. A forward-pointing gripper (cup axis perpendicular to
-  the approach axis, option `cup.mount: side`) cannot reach the near grid rows (J6 lower limit).
-- **Pouring direction**: yaw −120° (lip towards the robot's back-right), the only direction in a
-  12-way sweep that is feasible over the whole grid at 125° tilt with ≥ 0.48 rad joint margin.
-  Home: `[0.2517, −0.1347, −0.1080, 1.1221, −0.0152, 1.2560, −0.8979]` (cup mouth (0.40, 0, 0.30) m).
+Numbers in `reports/m1*`, `m4*`, `m5*`, `m6*`, `m8*` before the commit "side grip" were measured with the
+earlier hanging-cup layout (yaw −120°); re-run them for the current layout (README commands).
+
+
+- **Cup mount `grip` (default)**: no handle; the fingers pinch the cup body from the side (pads at
+  25 mm above the inner bottom). The finger command is computed from the cup diameter (68 mm → 74
+  of 255 on the xArm gripper, 89 mm maximum opening). The bowl stands directly on the table (no
+  scale plate; `bowl.scale_height > 0` adds one). Earlier layouts with a handle (`hang`, `side`)
+  remain as options.
+- **Roll pour**: the lip is on a finger side (`cup.lip_yaw_deg: 90`) and the cup turns about the
+  gripper's approach axis. A sweep of lip side (0°, ±90°) × pour direction (12 yaws) over the grid
+  corners found: lip on the far side from the palm (forward pour) — no direction feasible; lip on a
+  finger side with the lip 30–50 mm above the rim — the gripper body crosses the rim; with the lip
+  ≥ ~65 mm above the rim, pour direction 0° (away from the robot) is collision-free everywhere with
+  ≥ 0.5 rad margin on J2/J4/J6 (`task.scripted.lip_height: [0.065, 0.085]`).
+  Home: `[0.7423, 0.3094, −0.1474, 1.0617, −1.0825, 1.9405, 2.4654]` (cup mouth (0.40, 0, 0.30) m, lip +x).
+- **Wrist camera**: above the gripper housing, in front of it, looking down past the cup towards
+  the lip side (cup mouth, bowl and bead stream in view).
 - **Physics**: CG solver, 20 iterations, 2 ms (Newton: ~700 ms per step with ~2,500 bead DoFs;
   10 CG iterations let beads through the walls). Cup and bowl have invisible collision shells 8 mm
   thicker than the visual walls (beads tunnelled through 3–4 mm walls).

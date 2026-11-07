@@ -42,12 +42,11 @@ def rot_axis(axis, a):
 
 
 DEFAULT_PARAMS = dict(
+    # Defaults below; config task.scripted overrides any of them (lists = uniform ranges).
     lip_height=(0.030, 0.050),        # lip above the bowl rim while pouring (m)
     lip_offset=(-0.005, 0.020),       # lip position before the bowl centre, along the pour direction (m)
     lateral_offset=(-0.008, 0.008),   # lip offset perpendicular to the pour direction (m)
-    # Pouring direction about world z (0 = +x). A yaw sweep over the grid corners (README, M4) found
-    # -120 deg feasible everywhere with >= 0.5 rad joint-limit margin at 125 deg tilt.
-    yaw_deg=(-130.0, -110.0),
+    yaw_deg=(-10.0, 10.0),            # pouring direction about world z (0 = +x, away from the robot)
     above_height=0.06,                # pre-pour approach height above the upright-clearance height (m)
     upright_clearance=0.012,          # cup bottom above the rim while upright (m)
     theta1_deg=(55.0, 65.0),          # first tilt (flow onset)
@@ -66,7 +65,11 @@ class ScriptedPourPlanner:
     def __init__(self, cfg, scene, params=None):
         self.cfg = cfg
         self.h = scene
-        self.p = dict(DEFAULT_PARAMS, **(params or {}))
+        over = {k: (tuple(v) if isinstance(v, list) else v) for k, v in cfg["task"].get("scripted", {}).items()}
+        unknown = set(over) - set(DEFAULT_PARAMS)
+        if unknown:
+            raise KeyError(f"unknown task.scripted keys: {sorted(unknown)}")
+        self.p = dict(DEFAULT_PARAMS, **over, **(params or {}))
         lim = np.radians(np.array(cfg["robot"]["joint_limits_deg"], dtype=float))
         self.ik = SiteIK(scene.model, scene.arm_qpos, scene.arm_dof, scene.sites["cup_mouth"], lim[:, 0], lim[:, 1])
         self.home_q = np.array(cfg["robot"]["home_q"], float)
@@ -75,7 +78,7 @@ class ScriptedPourPlanner:
         c = cfg["cup"]
         self.lip_in_cup = np.array([c["inner_radius"] + c["wall"], 0.0, 0.0])   # relative to the mouth centre
         b = cfg["bowl"]
-        self.rim_z = b["scale_height"] + b["bottom"] + b["depth"]
+        self.rim_z = b.get("scale_height", 0.0) + b["bottom"] + b["depth"]
         self.cup_hang = c["inner_depth"] + c["bottom"]          # cup bottom below the lip when upright
 
     def _u(self, rng, key):

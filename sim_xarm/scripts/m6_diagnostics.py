@@ -73,7 +73,7 @@ class SafetyChecker:
         self.lo, self.hi = lim[:, 0], lim[:, 1]
 
     def set_bowl(self, xy):
-        self.m.body_pos[self.h.bodies["scale"], :2] = xy
+        self.m.body_pos[self.h.bodies["bowl_base"], :2] = xy
 
     def check(self, q):
         self.d.qpos[self.h.arm_qpos] = q
